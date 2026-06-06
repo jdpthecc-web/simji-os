@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>관리자 대시보드 · 심지OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@700&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#1A2E4A;--teal:#0F766E;--mint:#9FE1CB;--mint-soft:#E1F5EE;--ink:#15212F;--muted:#5B6B7B;--line:#E7E2D6;--cream:#FAF8F3;--red:#C0212E;--red-soft:#FDECEC;--red-line:#E5484D}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans KR',sans-serif;background:var(--cream);color:var(--ink);padding:20px}
+.wrap{max-width:1000px;margin:0 auto}
+h1{font-family:'Gowun Batang',serif;color:var(--navy);font-size:26px}
+h2{font-size:16px;color:var(--navy);margin:26px 0 10px}
+.top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px}
+.sub{font-size:13px;color:var(--muted)}
+.sub a{color:var(--teal);text-decoration:none}
+.badge{display:inline-block;background:#FFF3D6;border:1px solid #E2C572;color:#7A5A28;font-size:12px;font-weight:700;border-radius:999px;padding:4px 12px}
+.btn{background:var(--navy);color:#fff;border:none;border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+.cards{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;min-width:140px;flex:1}
+.card .t{font-size:12px;color:var(--muted);white-space:nowrap}
+.card .v{font-size:26px;font-weight:700;color:var(--navy)}
+.card.hot{background:var(--red-soft);border-color:var(--red-line)}
+.card.hot .v{color:var(--red)}
+.banner{background:var(--red-soft);border:1px solid var(--red-line);border-radius:12px;padding:14px;margin:6px 0 12px;color:var(--red);font-weight:700;display:none}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:13px}
+.chip b{color:var(--teal)}
+table{width:100%;background:#fff;border:1px solid var(--line);border-radius:12px;border-collapse:separate;border-spacing:0;font-size:13px;overflow:hidden}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:500;font-size:12px}
+tr:last-child td{border-bottom:none}
+.warn{color:var(--red);font-weight:700}
+.dec{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;font-size:13px}
+.dec b.ch{color:var(--teal)}
+.dec .why{color:var(--muted);font-size:12px;margin-top:4px;line-height:1.6}
+.empty{color:var(--muted);font-size:13px;background:#fff;border:1px dashed var(--line);border-radius:12px;padding:16px}
+.foot{font-size:11px;color:var(--muted);margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
+@media(max-width:640px){ .card{min-width:44%} table{font-size:12px} th,td{padding:8px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>심지OS 관리자 대시보드</h1>
+      <div class="sub"><span id="date">—</span> 기준 · <a href="/admin/agent-logs?html=1">에이전트 로그 전체</a> · <a href="/metrics">원시 지표</a> <span id="badge" class="badge" style="display:none">샘플 미리보기 — 배포 후 실데이터로 표시됩니다</span></div>
+    </div>
+    <button class="btn" onclick="load()">↻ 새로고침</button>
+  </div>
+
+  <div class="cards" id="cards"></div>
+  <div class="banner" id="banner">⚠ 오늘 안전 신호가 있습니다 — 해당 아동을 우선 확인하세요 (아래 표 ⚠ 표시)</div>
+
+  <h2>최근 7일 이벤트</h2>
+  <div class="chips" id="types"></div>
+
+  <h2>아동별 현황</h2>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>아동 ID</th><th>활동일수</th><th>마지막 활동</th><th>오늘 이벤트</th><th>안전</th></tr></thead>
+    <tbody id="kids"></tbody>
+  </table></div>
+
+  <h2>오케스트레이터 최근 결정</h2>
+  <div id="decisions"></div>
+
+  <div class="foot">이 화면의 정보는 운영·안전 확인 목적입니다. 아동 식별정보는 가명 ID만 표시되며, 외부 공유를 금합니다. 안전 신호는 진단이 아니라 사람의 확인이 필요한 알림입니다.</div>
+</div>
+
+<script>
+const SAMPLE = {
+  today: new Date().toISOString().slice(0,10),
+  totalKids: 3, todayActive: 2, todayEvents: 9, safetyToday: 1, safetyTotal: 1,
+  typeCount: { measurement: 6, gratitude: 5, reading: 3, stage_done: 12, milestone: 1, fruit: 2 },
+  kids: [
+    { id: 'c_demo1', days: 12, last: new Date().toISOString().slice(0,10), todayCnt: 5, safety: 0 },
+    { id: 'c_demo2', days: 4,  last: new Date().toISOString().slice(0,10), todayCnt: 4, safety: 1 },
+    { id: 'c_demo3', days: 21, last: '2026-06-01', todayCnt: 0, safety: 0 }
+  ],
+  decisions: [
+    { childId: 'c_demo2', chosen: 'safety_escalation', decisions: [
+      { agent:'safety_escalation', decision:'채택', reason:'안전 신호 감지' },
+      { agent:'parent_comm', decision:'보류', reason:'안전 우선 — 일상 알림 보류' } ] },
+    { childId: 'c_demo1', chosen: 'parent_comm', decisions: [
+      { agent:'parent_comm', decision:'채택', reason:'감사 제출 → 부모 대화' },
+      { agent:'weekly_report', decision:'보류', reason:'하루 한 가지로 집중(우선순위 낮음)' } ] }
+  ]
+};
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function card(t,v,hot){ return '<div class="card'+(hot?' hot':'')+'"><div class="t">'+t+'</div><div class="v">'+v+'</div></div>'; }
+function render(d, isSample){
+  document.getElementById('date').textContent = d.today || '—';
+  document.getElementById('badge').style.display = isSample ? 'inline-block' : 'none';
+  document.getElementById('cards').innerHTML =
+    card('전체 아동', d.totalKids||0)
+    + card('오늘 활동 아동', d.todayActive||0)
+    + card('오늘 이벤트', d.todayEvents||0)
+    + card('안전 신호 (오늘/전체)', (d.safetyToday||0)+' / '+(d.safetyTotal||0), (d.safetyToday||0)>0);
+  document.getElementById('banner').style.display = (d.safetyToday||0)>0 ? 'block' : 'none';
+  const tc = d.typeCount||{};
+  document.getElementById('types').innerHTML = Object.keys(tc).length
+    ? Object.keys(tc).map(function(t){ return '<div class="chip">'+esc(t)+' <b>'+tc[t]+'</b></div>'; }).join('')
+    : '<div class="empty">최근 7일 이벤트가 없습니다.</div>';
+  const kids = d.kids||[];
+  document.getElementById('kids').innerHTML = kids.length
+    ? kids.map(function(k){ return '<tr><td><b>'+esc(k.id)+'</b></td><td>'+(k.days||0)+'</td><td>'+esc(k.last||'-')+'</td><td>'+(k.todayCnt||0)+'</td><td>'+(k.safety?'<span class="warn">⚠ '+k.safety+'</span>':'-')+'</td></tr>'; }).join('')
+    : '<tr><td colspan="5" style="color:var(--muted)">아직 데이터가 없습니다.</td></tr>';
+  const dec = d.decisions||[];
+  document.getElementById('decisions').innerHTML = dec.length
+    ? dec.map(function(o){ return '<div class="dec"><b>'+esc(o.childId||'-')+'</b> → 채택: <b class="ch">'+esc(o.chosen||'없음')+'</b><div class="why">'+(o.decisions||[]).map(function(x){ return esc(x.agent)+': '+esc(x.decision)+' ('+esc(x.reason)+')'; }).join(' · ')+'</div></div>'; }).join('')
+    : '<div class="empty">아직 결정 로그가 없습니다. cron 또는 수동으로 POST /agents/orchestrate 를 실행하세요.</div>';
+}
+async function load(){
+  try{
+    const r = await fetch('/admin/dashboard.json', { cache:'no-store' });
+    if(!r.ok) throw 0;
+    render(await r.json(), false);
+  }catch(e){ render(SAMPLE, true); }
+}
+load();
+</script>
+</body>
+</html>

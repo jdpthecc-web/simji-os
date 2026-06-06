@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: simji-os
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      # 라이브 시크릿 키는 커밋하지 말고 대시보드에서 입력하세요 (sync:false).
+      - key: TOSS_SECRET_KEY
+        sync: false
+      - key: ADMIN_USER
+        sync: false
+      - key: ADMIN_PASS
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: TOSS_CLIENT_KEY
+        sync: false
+      - key: TOSS_BILLING_SECRET_KEY
+        sync: false
+      - key: SOLAPI_API_KEY
+        sync: false
+      - key: SOLAPI_API_SECRET
+        sync: false
+      - key: KAKAO_PF_ID
+        sync: false
+      - key: KAKAO_TEMPLATE_ID
+        sync: false
+      - key: NOTIFY_FROM
+        sync: false
+      - key: NOTIFY_TEST_TO
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        sync: false
+      - key: AI_PROVIDER
+        sync: false
+      - key: GCP_PROJECT_ID
+        sync: false
+      - key: GCP_LOCATION
+        sync: false
+      - key: GCP_SA_KEY
+        sync: false

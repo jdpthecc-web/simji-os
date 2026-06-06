@@ -1,0 +1,16 @@
+{
+  "name": "simji-payment-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SIMJI OS 토스페이먼츠 결제 승인 서버",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.22.2"
+  }
+}
