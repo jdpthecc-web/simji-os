@@ -230,7 +230,8 @@ function toGemini(body) {
     else if (Array.isArray(m.content)) text = m.content.map(x => typeof x === 'string' ? x : (x.text || '')).join('\n');
     contents.push({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text }] });
   });
-  const gen = { contents, generationConfig: { maxOutputTokens: body.max_tokens || 1024 } };
+  const gen = { contents, generationConfig: { maxOutputTokens: Math.max(body.max_tokens || 1024, 1024) } };
+  if (GEMINI_MODEL.includes('flash')) gen.generationConfig.thinkingConfig = { thinkingBudget: 0 }; // 플래시: 내부 추론 비활성 — 토큰 전부를 답변에
   if (sys) gen.systemInstruction = { parts: [{ text: sys }] };
   if (typeof body.temperature === 'number') gen.generationConfig.temperature = body.temperature;
   return gen;
@@ -436,7 +437,8 @@ async function aiText(prompt, system, maxTokens) {
   if (!provider) return null;
   try {
     if (provider === 'gemini' || provider === 'vertex') {
-      const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: maxTokens || 300 } };
+      const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: Math.max(maxTokens || 300, 512) } };
+      if (GEMINI_MODEL.includes('flash')) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
       if (system) body.systemInstruction = { parts: [{ text: system }] };
       const out = await callGenAI(body);
       if (!out.ok) return null;

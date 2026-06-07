@@ -211,7 +211,7 @@ async function aiText(system, prompt){
   try{
     const r = await fetch(AI_ENDPOINT, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ model:'server', max_tokens:300, system:system, messages:[{role:'user', content:prompt}] })
+      body: JSON.stringify({ model:'server', max_tokens:800, system:system, messages:[{role:'user', content:prompt}] })
     });
     if(!r.ok) return null;
     const d = await r.json();
@@ -374,7 +374,7 @@ async function submitBrain(){
   const _pn=DB.profile(); const _nm=_pn?_pn.name:'';
   const prompt = '오늘 상태 지수 '+idx+'점. 사용 신호: '+sources.join('+')+'. 집중 '+_brainInput.focus+'/5, 컨디션 '+_brainInput.energy+'/5'+(_brainInput.taskScore!=null?(', 반응속도점수 '+_brainInput.taskScore):'')+'. 최근 추세: '+trend+'.'+(returned?' 며칠 쉬었다가 오늘 돌아옴.':'')+(_nm?(' 아이 이름: '+_nm+' — 다정하게 이름을 불러줘.'):'')+(DB.currentDream()?(' 아이의 꿈: '+DB.currentDream()+' — 자연스러울 때만 살짝 연결, 강요 금지.'):'')+' 위 형식대로 두 줄로.';
   let text = await aiText(system, prompt);
-  if(!aiKoreanOk(text)) text=null;
+  if(!aiKoreanOk(text) || !looksComplete(text)) text=null;
 
   // 폴백(AI 불가 시 안전 템플릿)
   if(!text){
@@ -451,8 +451,8 @@ async function submitHeart(){
   let text=await aiText(system,prompt);
   let childLine='',parentLine='';
   if(text){ const parts=text.split('|||'); childLine=(parts[0]||'').trim(); parentLine=(parts[1]||'').trim(); }
-  if(!aiKoreanOk(childLine)) childLine='';
-  if(!aiKoreanOk(parentLine)) parentLine='';
+  if(!aiKoreanOk(childLine) || !looksComplete(childLine)) childLine='';
+  if(!aiKoreanOk(parentLine) || !looksComplete(parentLine)) parentLine='';
   if(!childLine) childLine=wb>=60?'마음을 나눠줘서 고마워요. 들려준 이야기는 소중히 담아둘게요.':'마음이 조금 무거운 날도 있어요. 나눠줘서 고마워요 — 그 용기가 참 멋져요.';
   if(!parentLine) parentLine=grat?('오늘 "'+grat+'"에 고마워했대요. "그게 왜 좋았어?"라고 물어봐 주세요.'):'오늘 하루 어떤 점이 좋았는지 아이에게 물어봐 주세요.';
   DB.addGratitudes(grats);
@@ -505,7 +505,7 @@ async function askWisdom(){
   const _p=DB.profile(); const _nm=(_p&&_p.name)?_p.name:''; const _voc=_nm?vocative(_nm):'';
   const system='너는 아동의 읽기·질문 도우미다. 知(암기)가 아니라 智(스스로 생각함)를 기른다. 아이가 책에서 마음에 남았다며 적은 문장·장면을 한마디로 인정한 뒤, 그 문장이 아이의 마음·삶과 어떻게 닿는지 여는 질문 하나만 던져라(정답 없음, 채점 금지). 답을 대신 말하지 말 것. 아이를 반드시 이름으로 다정하게 부르고 너·네 같은 대명사는 쓰지 말 것. 쉬운 말, 두 문장 이내. 마크다운·별표·괄호·영어·JSON 금지, 한국어 평문만.';
   let text=await aiText(system, '아이 이름: '+(_nm||'(없음)')+'. 아이가 책에서 마음에 남았다고 적은 문장: "'+(t||'(아직 안 적음)')+'". '+(DB.currentDream()?('아이의 꿈: '+DB.currentDream()+'. '):'')+'인정 + 열린 질문 하나(꿈이 있으면 자연스러울 때만 살짝 연결).');
-  if(!aiKoreanOk(text)) text=null;
+  if(!aiKoreanOk(text) || !looksComplete(text)) text=null;
   _lastWQ = text || ((_voc?_voc+', ':'')+'좋은 문장을 골랐네요. 그 문장이 '+(_nm?_nm+'의':'') +' 마음에 남은 이유는 뭘까?');
   box.textContent = _lastWQ;
   const w=document.getElementById('wa-wrap'); if(w){ w.style.display='block'; }
@@ -1052,6 +1052,10 @@ function sanitizeAI(t){
   t=t.replace(/^\s*(json|output|response|응답|답변|아이|부모)\s*[:：]/i,'');
   t=t.replace(/\s+/g,' ').trim();
   return t;
+}
+function looksComplete(t){
+  if(!t) return false; t=String(t).trim();
+  return /[.!?…~)\u201d\u2019]$/.test(t) || /[다요네야아어지께까]$/.test(t) || /(구나|거야|잖아|볼까|할래|좋아|있어|했어|줬어|냈어|간다|온다)$/.test(t);
 }
 function aiKoreanOk(t){
   if(!t) return false;
