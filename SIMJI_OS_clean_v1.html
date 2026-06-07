@@ -182,7 +182,7 @@ const DB = {
   addGratitudes(arr){ const d=this.load(); if(!d.gratitudes) d.gratitudes=[]; const t=this.today(); arr.forEach(function(g){ d.gratitudes.push({date:t,at:Date.now(),text:g}); }); this.save(d); },
   recentStateIndices(n){ const d=this.load(); const out=Object.keys(d.days).sort().map(function(k){ return {date:k, idx:d.days[k].stateIndex}; }).filter(function(x){ return x.idx!=null; }); return out.slice(-(n||7)); },
   profile(){ const d=this.load(); return d.profile||null; },
-  setProfile(name,band){ const d=this.load(); const id=(d.profile&&d.profile.id)||('c_'+Math.random().toString(36).slice(2,8)); d.profile={name:name,id:id,band:band||(d.profile&&d.profile.band)||'elem'}; this.save(d); },
+  setProfile(name,band,grade,gender){ const d=this.load(); const id=(d.profile&&d.profile.id)||('c_'+Math.random().toString(36).slice(2,8)); d.profile={name:name,id:id,band:band||(d.profile&&d.profile.band)||'elem',grade:grade||(d.profile&&d.profile.grade)||'',gender:gender||(d.profile&&d.profile.gender)||''}; this.save(d); },
   bestReaction(){ const d=this.load(); return d.bestRt||null; },
   setBestReaction(ms){ const d=this.load(); d.bestRt=ms; this.save(d); },
   last7(){ const d=this.load(); const out=[]; const names=['일','월','화','수','목','금','토'];
@@ -457,7 +457,7 @@ async function submitHeart(){
   if(!parentLine) parentLine=grat?('오늘 "'+grat+'"에 고마워했대요. "그게 왜 좋았어?"라고 물어봐 주세요.'):'오늘 하루 어떤 점이 좋았는지 아이에게 물어봐 주세요.';
   DB.addGratitudes(grats);
   DB.addParentMessage({starter:parentLine,grat:grat,wb:wb});
-  logEvent('gratitude',{wb:wb,count:grats.length});
+  logEvent('gratitude',{wb:wb,count:grats.length,mood:_heart.mood,calm:_heart.calm,conn:_heart.connect,hasFeel:feel?1:0});
   box.innerHTML='<div class="coach"><div class="label">마음 연결</div><div class="interp">'+esc(childLine)+'</div><div class="step">💌 부모님 화면에는 오늘의 대화 한마디를 살짝 보내뒀어</div></div><button class="btn btn-primary" style="margin-top:14px" onclick="completeStage(\'heart\',{heartIndex:'+wb+'})">다음: 읽기·질문 →</button>';
   btn.style.display='none';
 }
@@ -496,7 +496,7 @@ function saveReading(){
   const pages=Math.max(0,Math.min(2000,parseInt((document.getElementById('rpages')||{}).value,10)||0));
   const ans=((document.getElementById('wanswer')||{}).value||'').trim();
   DB.addReading({ title:title, recon:recon, pages:pages, question:_lastWQ, answer:ans });
-  logEvent('reading', { hasTitle:title?1:0, hasRecon:recon?1:0 });
+  logEvent('reading', { hasTitle:title?1:0, hasRecon:recon?1:0, pages:pages, gotQ:_lastWQ?1:0, hasAns:ans?1:0 });
   completeStage('wisdom', {});
 }
 async function askWisdom(){
@@ -556,7 +556,7 @@ function toggleRole(){
     const ans=prompt('부모님의 공간이에요.\n보호자 확인: '+x+' × '+y+' = ?');
     if(ans===null) return;
     if(parseInt(ans,10)!==x*y){ toast('보호자 확인에 실패했어요'); return; }
-    ROLE='parent'; document.getElementById('role-label').textContent='부모 ▾'; renderParent();
+    ROLE='parent'; document.getElementById('role-label').textContent='부모 ▾'; logEvent('parent_view',{}); renderParent();
   } else {
     ROLE='student'; document.getElementById('role-label').textContent='학생 ▾'; goHome();
   }
@@ -611,6 +611,21 @@ function greet0(who,tn){
   if(h<22) return pre+'오늘 하루도 수고했어 🌙';
   return pre+'자기 전에 와줬구나 ⭐';
 }
+const GRADES=[['e1','초1'],['e2','초2'],['e3','초3'],['e4','초4'],['e5','초5'],['e6','초6'],['m1','중1'],['m2','중2'],['m3','중3'],['h1','고1'],['h2','고2'],['h3','고3']];
+function gradeSelect(cur){
+  return '<select id="grade-pick" onchange="selGrade(this.value)" style="width:100%;padding:12px;border:1.5px solid var(--line);border-radius:12px;font-size:15px;background:#fff;margin:0 0 14px">'
+    + '<option value="" disabled'+(cur?'':' selected')+'>내 학년 고르기 (초1 ~ 고3)</option>'
+    + GRADES.map(function(g){ return '<option value="'+g[0]+'"'+(cur===g[0]?' selected':'')+'>'+g[1]+'</option>'; }).join('')
+    + '</select>';
+}
+function genderChips(cur){
+  const opts=[['m','남자'],['f','여자'],['na','안 알려줄래']];
+  return '<div class="chips" style="justify-content:center;margin:0 0 14px">'+opts.map(function(o){
+    return '<button class="chip"'+(cur===o[0]?' style="background:var(--mint-soft);border-color:var(--mint)"':'')+' onclick="selGender(this,\''+o[0]+'\')">'+o[1]+'</button>';
+  }).join('')+'</div>';
+}
+function selGender(btn,g){ window._genderPick=g; const sibs=btn.parentNode.children; for(var i=0;i<sibs.length;i++){ sibs[i].style.background=''; sibs[i].style.borderColor=''; } btn.style.background='var(--mint-soft)'; btn.style.borderColor='var(--mint)'; }
+function selGrade(g){ window._gradePick=g; window._bandPick=(g.charAt(0)==='e')?'elem':'teen'; }
 function selBand(btn,bd){ window._bandPick=bd; const sibs=btn.parentNode.children; for(var i=0;i<sibs.length;i++){ sibs[i].style.background=''; sibs[i].style.borderColor=''; } btn.style.background='var(--mint-soft)'; btn.style.borderColor='var(--mint)'; }
 function vocative(n){ if(!n) return ''; const c=n.charCodeAt(n.length-1); if(c>=0xAC00&&c<=0xD7A3){ return n+(((c-0xAC00)%28)>0?'아':'야'); } return n; }
 function showOverlay(html){ const o=document.createElement('div'); o.className='ovl'; o.innerHTML='<div class="ovl-card">'+html+'</div>'; document.body.appendChild(o); return o; }
@@ -621,7 +636,7 @@ function maybeOnboard(){
     +'<h2>만나서 반가워요!</h2>'
     +'<p>심지OS는 매일 1분, 너의 하루를 함께 도는 친구야.<br>腦 상태 보기 → 心 마음 적기 → 智 읽기 → 動 작은 실천!</p>'
     +'<input id="ob-name" maxlength="10" placeholder="뭐라고 불러줄까? (이름/별명)">'
-    +'<div class="chips" style="justify-content:center;margin:0 0 14px"><button class="chip" style="background:var(--mint-soft);border-color:var(--mint)" onclick="selBand(this,\'elem\')">초등학생</button><button class="chip" onclick="selBand(this,\'teen\')">중·고등학생</button></div>'
+    +gradeSelect('')+genderChips('')
     +'<button class="btn btn-primary" style="width:100%" onclick="finishOnboard(this)">시작하기</button>'
     +'<p style="margin-top:10px;font-size:11px">의료 진단이 아니라 매일의 성장을 돕는 교육 도구예요.</p>'
   );
@@ -629,7 +644,9 @@ function maybeOnboard(){
 function finishOnboard(btn){
   const v=document.getElementById('ob-name').value.trim();
   if(!v){ document.getElementById('ob-name').placeholder='이름이나 별명을 알려줘!'; return; }
-  DB.setProfile(v, window._bandPick||'elem'); logEvent('onboard',{band:window._bandPick||'elem'});
+  if(!window._gradePick){ toast('학년을 골라줘 — 초1부터 고3까지 있어 🙂'); return; }
+  if(!window._genderPick){ toast('마지막 하나 — 성별을 골라줘 (안 알려줘도 괜찮아)'); return; }
+  DB.setProfile(v, window._bandPick||'elem', window._gradePick, window._genderPick); logEvent('onboard',{band:window._bandPick||'elem',grade:window._gradePick,gender:window._genderPick});
   btn.closest('.ovl').remove(); renderHome(); toast(vocative(v)+', 환영해!');
 }
 function openSettings(){
@@ -638,7 +655,7 @@ function openSettings(){
   showOverlay(
     '<h2>설정</h2>'
     +'<input id="set-name" maxlength="10" value="'+esc(p.name||'')+'" placeholder="이름/별명">'
-    +'<div class="chips" style="justify-content:center;margin:0 0 14px"><button class="chip"'+(p.band!=='teen'?' style="background:var(--mint-soft);border-color:var(--mint)"':'')+' onclick="selBand(this,\'elem\')">초등학생</button><button class="chip"'+(p.band==='teen'?' style="background:var(--mint-soft);border-color:var(--mint)"':'')+' onclick="selBand(this,\'teen\')">중·고등학생</button></div>'
+    +gradeSelect(p.grade||'')+genderChips(p.gender||'')
     +'<button class="btn btn-primary" style="width:100%;margin-bottom:10px" onclick="saveSettings(this)">저장</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="exportData()">💾 기록 백업하기 (파일 저장)</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="importData()">📂 백업 불러오기 (복원)</button>'
@@ -647,7 +664,7 @@ function openSettings(){
     +'<p style="margin-top:12px;font-size:11px">심지OS는 의료기기가 아니며 진단·치료 목적이 아니에요.</p>'
   );
 }
-function saveSettings(btn){ const v=document.getElementById('set-name').value.trim(); const p=DB.profile()||{}; DB.setProfile(v||p.name||'', window._bandPick||p.band||'elem'); window._bandPick=null; btn.closest('.ovl').remove(); renderHome(); toast('저장했어요'); }
+function saveSettings(btn){ const v=document.getElementById('set-name').value.trim(); const p=DB.profile()||{}; DB.setProfile(v||p.name||'', window._bandPick||p.band||'elem', window._gradePick||p.grade||'', window._genderPick||p.gender||''); window._bandPick=null; window._gradePick=null; window._genderPick=null; btn.closest('.ovl').remove(); renderHome(); toast('저장했어요'); }
 function resetAll(btn){
   // 보호자 게이트: 어른만 풀 수 있는 확인 (어린이 앱 표준 패턴)
   const x=4+Math.floor(Math.random()*5), y=6+Math.floor(Math.random()*4);
@@ -661,6 +678,7 @@ function resetAll(btn){
 }
 function celebrate(){
   const day=DB.day(); if(day.celebrated) return; day.celebrated=true; DB.setDay(day);
+  logEvent('full_loop',{});
   const p=DB.profile(); const nm=p?vocative(p.name):'';
   const emo=['🎉','🌱','⭐','🎊','💚','✨']; let conf='';
   for(let i=0;i<14;i++){ conf+='<span style="left:'+(5+Math.random()*90)+'%;animation-delay:'+(Math.random()*0.7)+'s">'+emo[i%emo.length]+'</span>'; }
@@ -993,7 +1011,7 @@ function openPastToday(){
 }
 
 /* ---------- 매년 3월: 새 학년 확인 → 말투 자동 보정 ---------- */
-function confirmYearBand(btn){ const p=DB.profile()||{}; DB.setProfile(p.name||'', window._bandPick||p.band||'elem'); window._bandPick=null; btn.closest('.ovl').remove(); renderHome(); toast('말투를 맞췄어!'); }
+function confirmYearBand(btn){ const p=DB.profile()||{}; DB.setProfile(p.name||'', window._bandPick||p.band||'elem', window._gradePick||p.grade||''); window._bandPick=null; window._gradePick=null; logEvent('grade_update',{grade:(DB.profile()||{}).grade||'na'}); btn.closest('.ovl').remove(); renderHome(); toast('말투를 맞췄어!'); }
 function checkYearBand(){
   if(document.querySelector('.ovl')) return;
   const p=DB.profile(); if(!p) return;
@@ -1002,7 +1020,7 @@ function checkYearBand(){
   d.bandAsk=y; DB.save(d);
   window._bandPick=p.band||'elem';
   showOverlay('<div style="font-size:36px;margin-bottom:6px">🌸</div><h2>'+(p.name?vocative(p.name)+', ':'')+'새 학년이 됐어?</h2><p>지금 학교를 알려주면 거기에 맞춰 이야기할게!</p>'
-    +'<div class="chips" style="justify-content:center;margin:14px 0"><button class="chip"'+(p.band!=='teen'?' style="background:var(--mint-soft);border-color:var(--mint)"':'')+' onclick="selBand(this,\'elem\')">초등학생</button><button class="chip"'+(p.band==='teen'?' style="background:var(--mint-soft);border-color:var(--mint)"':'')+' onclick="selBand(this,\'teen\')">중·고등학생</button></div>'
+    +'<div style="margin:14px 0">'+gradeSelect(p.grade||'')+'</div>'
     +'<button class="btn btn-primary" style="width:100%" onclick="confirmYearBand(this)">이걸로 맞춰줘</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="this.closest(\'.ovl\').remove()">지금 그대로 둘게</button>');
 }
