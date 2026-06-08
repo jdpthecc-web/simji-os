@@ -17,7 +17,8 @@ app.use(express.json());
 // 시크릿 키: 환경변수 우선, 없으면 토스 공개 테스트 키로 동작.
 // ⚠ 라이브 전환 시 반드시 환경변수 TOSS_SECRET_KEY 로 본인 키를 주입하세요. (코드에 라이브 키를 적지 마세요)
 const SECRET_KEY = process.env.TOSS_SECRET_KEY || 'test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6';
-const METRICS_FILE = path.join(__dirname, 'metrics.jsonl');
+const DATA_DIR = fs.existsSync('/var/data') ? '/var/data' : __dirname; // 영구 디스크
+const METRICS_FILE = path.join(DATA_DIR, 'metrics.jsonl');
 const PORT = process.env.PORT || 3000;
 
 // 같은 폴더의 앱 파일 서빙
@@ -30,6 +31,7 @@ app.get('/premium', (req, res) => res.sendFile(path.join(__dirname, 'SIMJI_OS_v3
 app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
 app.get('/youth', (req, res) => res.sendFile(path.join(__dirname, 'youth.html')));
+app.get('/subscribe', (req, res) => res.sendFile(path.join(__dirname, 'subscribe.html')));
 
 /**
  * 결제 승인 엔드포인트
@@ -88,7 +90,7 @@ app.post('/confirm', async (req, res) => {
  *   ⚠ 데모용으로 인증이 없습니다. 운영 시 접근 제한을 거세요.
  *   ⚠ 무료 호스팅은 파일이 재배포 시 사라질 수 있으니, 행사 후 데이터를 내려받아 보관하세요.
  */
-const FB_FILE = path.join(__dirname, 'feedback.jsonl');
+const FB_FILE = path.join(DATA_DIR, 'feedback.jsonl');
 
 app.post('/feedback', (req, res) => {
   const b = req.body || {};
@@ -158,7 +160,8 @@ app.get('/admin/feedback', adminAuth, (req, res) => {
  * 런타임 설정 — Toss 클라이언트 키(라이브 전환 시 env만 변경)
  */
 app.get('/config', (req, res) => {
-  res.json({ tossClientKey: process.env.TOSS_CLIENT_KEY || 'test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm' });
+  const rem = Math.max(0, EARLY_LIMIT - earlyCount());
+  res.json({ tossClientKey: process.env.TOSS_CLIENT_KEY || 'test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm', earlyRemaining: rem, earlyOpen: rem > 0 });
 });
 
 /**
@@ -271,8 +274,11 @@ app.post('/ai', async (req, res) => {
  * ⚠ 데모 저장(billing-keys.jsonl, 평문). 운영은 암호화 저장/DB 권장.
  */
 const BILLING_SECRET = process.env.TOSS_BILLING_SECRET_KEY || SECRET_KEY;
-const BILLING_FILE = path.join(__dirname, 'billing-keys.jsonl');
+const BILLING_FILE = path.join(DATA_DIR, 'billing-keys.jsonl');
 const billingMap = {}; // customerKey -> { customerKey, billingKey, cardCompany, last4, issuedAt }
+function saveBilling(){ try { fs.writeFileSync(BILLING_FILE, Object.keys(billingMap).map(function(k){return JSON.stringify(billingMap[k]);}).join('\n')+'\n'); } catch(e){ console.error('billing save error:', e); } }
+const EARLY_LIMIT = 100;
+function earlyCount(){ return Object.keys(billingMap).filter(function(k){ var r=billingMap[k]; return r.status==='active' && (r.plan==='early'||r.plan==='early_annual'); }).length; }
 try {
   if (fs.existsSync(BILLING_FILE)) {
     fs.readFileSync(BILLING_FILE, 'utf8').split('\n').filter(Boolean).forEach(function (l) {
@@ -301,15 +307,23 @@ async function tossPost(url, body) {
 app.post('/billing/issue', async (req, res) => {
   const { authKey, customerKey } = req.body || {};
   if (!authKey || !customerKey) return res.status(400).json({ message: 'authKey, customerKey가 필요합니다.' });
+  const planReq = (req.body || {}).plan || 'regular';
+  if ((planReq === 'early' || planReq === 'early_annual') && earlyCount() >= EARLY_LIMIT) return res.status(409).json({ message: '얼리버드 100가정이 모두 마감되었습니다. 정가로 함께해 주세요.' });
   try {
     const r = await tossPost('https://api.tosspayments.com/v1/billing/authorizations/issue', { authKey: authKey, customerKey: customerKey });
     if (!r.ok) { console.error('❌ 빌링키 발급 실패:', r.data.code, r.data.message); return res.status(r.status).json({ message: r.data.message || '빌링키 발급 실패', code: r.data.code }); }
     const card = r.data.card || {};
-    const rec = { customerKey: customerKey, billingKey: r.data.billingKey, cardCompany: card.company || '', last4: (card.number || '').slice(-4), issuedAt: new Date().toISOString() };
+    const b = req.body || {};
+    const amount = parseInt(b.amount, 10) || 9900;
+    const period = (b.period === 'year') ? 'year' : 'month';
+    const next = new Date(); if (period === 'year') next.setFullYear(next.getFullYear() + 1); else next.setMonth(next.getMonth() + 1);
+    const rec = { customerKey: customerKey, billingKey: r.data.billingKey, cardCompany: card.company || '', last4: (card.number || '').slice(-4),
+                  email: (b.email||'').slice(0,120), plan: b.plan || 'regular', amount: amount, period: period, status: 'active',
+                  issuedAt: new Date().toISOString(), nextBilling: next.toISOString() };
     billingMap[customerKey] = rec;
-    try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'subscription', childId: customerKey, status:'active', mrr:10000, ts:Date.now() })+'\n'); } catch(e){}
-    try { fs.appendFileSync(BILLING_FILE, JSON.stringify(rec) + '\n'); } catch (e) { console.error('billing write error:', e); }
-    console.log('🔑 빌링키 발급/저장:', customerKey, rec.cardCompany, rec.last4);
+    saveBilling();
+    try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'subscription', childId: customerKey, status:'active', mrr: (period==='year'? Math.round(amount/12) : amount), amount: amount, period: period, plan: rec.plan, ts:Date.now() })+'\n'); } catch(e){}
+    console.log('🔑 빌링키 발급/저장:', customerKey, rec.cardCompany, rec.last4, rec.amount+'원/'+period);
     return res.json({ ok: true, cardCompany: rec.cardCompany, last4: rec.last4 }); // billingKey는 클라이언트로 보내지 않음
   } catch (e) { console.error('서버 오류:', e); return res.status(500).json({ message: '서버 오류: ' + e.message }); }
 });
@@ -331,9 +345,38 @@ app.post('/billing/charge', adminAuth, async (req, res) => {
 
 // 구독자 목록 (billingKey 비노출) — 관리자 인증
 app.get('/billing/subscribers', adminAuth, (req, res) => {
-  const list = Object.keys(billingMap).map(function (k) { const r = billingMap[k]; return { customerKey: r.customerKey, cardCompany: r.cardCompany, last4: r.last4, issuedAt: r.issuedAt }; });
-  res.json({ count: list.length, subscribers: list });
+  const list = Object.keys(billingMap).map(function (k) { const r = billingMap[k]; return { customerKey: r.customerKey, email: r.email||'', plan: r.plan||'', amount: r.amount||0, status: r.status||'active', cardCompany: r.cardCompany, last4: r.last4, issuedAt: r.issuedAt, nextBilling: r.nextBilling||'' }; });
+  res.json({ count: list.length, active: list.filter(function(x){return x.status==='active';}).length, subscribers: list });
 });
+// 해지 — 다음 결제부터 중단(이미 결제한 기간은 만료까지 이용)
+app.post('/billing/cancel', (req, res) => {
+  const { customerKey } = req.body || {};
+  const rec = billingMap[customerKey];
+  if (!rec) return res.status(404).json({ message: '구독 정보를 찾을 수 없습니다.' });
+  rec.status = 'canceled'; rec.canceledAt = new Date().toISOString(); saveBilling();
+  try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'subscription', childId: customerKey, status:'canceled', ts:Date.now() })+'\n'); } catch(e){}
+  return res.json({ ok: true });
+});
+// 월 자동청구 스케줄러
+async function chargeOne(rec){
+  const ym = new Date().toISOString().slice(0,7).replace('-','');
+  const orderId = 'sub_' + rec.customerKey + '_' + ym;
+  const r = await tossPost('https://api.tosspayments.com/v1/billing/' + encodeURIComponent(rec.billingKey),
+    { customerKey: rec.customerKey, amount: rec.amount, orderId: orderId, orderName: (rec.period==='year' ? '심지OS 연 구독' : '심지OS 월 구독') });
+  if (r.ok) {
+    const n = new Date(rec.nextBilling || Date.now()); if (rec.period==='year') n.setFullYear(n.getFullYear()+1); else n.setMonth(n.getMonth()+1); rec.nextBilling = n.toISOString(); rec.lastCharge = new Date().toISOString(); saveBilling();
+    try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'charge', childId: rec.customerKey, amount: rec.amount, status:'paid', ts:Date.now() })+'\n'); } catch(e){}
+    console.log('💳 자동결제 성공:', rec.customerKey, rec.amount+'원');
+  } else { console.error('❌ 자동결제 실패:', rec.customerKey, r.data.code, r.data.message); }
+  return r.ok;
+}
+async function runBillingCycle(){
+  const now = Date.now(); let n=0;
+  for (const k of Object.keys(billingMap)) { const rec = billingMap[k];
+    if (rec.status==='active' && rec.nextBilling && new Date(rec.nextBilling).getTime() <= now) { await chargeOne(rec); n++; } }
+  if (n) console.log('🔁 자동결제 주기 완료:', n+'건');
+}
+setTimeout(runBillingCycle, 60000); setInterval(runBillingCycle, 24*60*60*1000); // 부팅 1분 후 + 매일
 
 /**
  * 성과지표 — 측정/구독 이벤트 적재 및 집계 (운영 콘솔 KPI 대시보드 소스)

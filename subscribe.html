@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>심지OS 구독하기</title>
+<script src="https://js.tosspayments.com/v1/payment"></script>
+<style>
+  :root{ --navy:#16324F; --mint:#2F9E83; --mint-soft:#E6F4EF; --line:#E2E8E5; --muted:#7A8A85; --bg:#F7FAF9; }
+  *{box-sizing:border-box} body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--bg);color:var(--navy);line-height:1.6}
+  .wrap{max-width:480px;margin:0 auto;padding:28px 20px 60px}
+  .logo{font-weight:800;font-size:20px;color:var(--mint);margin-bottom:4px}
+  h1{font-size:22px;margin:6px 0 4px} .sub{color:var(--muted);font-size:14px;margin-bottom:24px}
+  .card{background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px;cursor:pointer;transition:.15s}
+  .card.sel{border-color:var(--mint);background:var(--mint-soft)}
+  .card .nm{font-weight:700;font-size:16px} .card .pr{font-size:22px;font-weight:800;margin-top:4px}
+  .card .pr small{font-size:13px;font-weight:500;color:var(--muted)} .card .ds{font-size:13px;color:var(--muted);margin-top:4px}
+  .badge{display:inline-block;background:var(--mint);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px}
+  label.row{display:flex;align-items:center;gap:8px;font-size:14px;margin:14px 2px;cursor:pointer}
+  input[type=email]{width:100%;padding:14px;border:1.5px solid var(--line);border-radius:12px;font-size:15px;margin-top:6px}
+  .field-label{font-weight:700;font-size:14px;margin-top:18px}
+  .links{font-size:12px;color:var(--muted);margin:6px 2px} .links a{color:var(--mint)}
+  button.go{width:100%;padding:16px;background:var(--navy);color:#fff;border:0;border-radius:14px;font-size:16px;font-weight:700;margin-top:20px;cursor:pointer}
+  button.go:disabled{opacity:.5}
+  .note{font-size:12px;color:var(--muted);text-align:center;margin-top:14px;line-height:1.7}
+  .panel{background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:32px 22px;text-align:center}
+  .panel .ic{font-size:44px} .panel h2{margin:10px 0 6px} .panel p{color:var(--muted);font-size:14px}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="form-view">
+    <div class="logo">심지OS</div>
+    <h1>구독하고 시작하기</h1>
+    <div class="sub">카드를 한 번만 등록하면 매달 자동으로 결제됩니다. 언제든 해지할 수 있어요.</div>
+    <div id="eb-banner" style="font-size:13px;font-weight:700;color:var(--mint);margin:-14px 0 18px;min-height:18px"></div>
+
+    <div class="card sel" data-plan="early" data-amount="5500" data-period="month">
+      <div class="nm">얼리버드 월 <span class="badge">선착 100가정</span></div>
+      <div class="pr">월 5,500원 <small>· 커피 한 잔 값</small></div>
+      <div class="ds">출시 기념 한정 (정가 9,900원의 약 45% 할인)</div>
+    </div>
+    <div class="card" data-plan="early_annual" data-amount="55000" data-period="year">
+      <div class="nm">얼리버드 연 <span class="badge">2개월 무료</span></div>
+      <div class="pr">연 55,000원 <small>· 월 4,583원 꼴</small></div>
+      <div class="ds">선착 100가정 한정 · 가장 큰 혜택 (1년에 한 번 결제)</div>
+    </div>
+    <div class="card" data-plan="regular" data-amount="9900" data-period="month">
+      <div class="nm">정가 월 구독</div>
+      <div class="pr">월 9,900원</div>
+      <div class="ds">자녀 1인 기준 · 매달 결제</div>
+    </div>
+    <div class="card" data-plan="annual" data-amount="99000" data-period="year">
+      <div class="nm">정가 연 구독 <span class="badge">2개월 무료</span></div>
+      <div class="pr">연 99,000원 <small>· 월 8,250원 꼴</small></div>
+      <div class="ds">1년에 한 번 결제 · 월 9,900원 대비 약 17% 할인</div>
+    </div>
+
+    <div class="field-label">보호자 이메일</div>
+    <input type="email" id="email" placeholder="example@email.com" autocomplete="email">
+    <div class="links">결제·환불 정보를 받을 이메일입니다. 자녀가 만 14세 미만인 경우 보호자(부모) 명의로 가입해 주세요.</div>
+
+    <label class="row"><input type="checkbox" id="agree"> <span><a href="/terms" target="_blank">이용약관</a> · <a href="/privacy" target="_blank">개인정보처리방침</a> · <a href="/refund.html" target="_blank">이용권·환불 안내</a>에 동의합니다.</span></label>
+
+    <div id="summary" style="margin-top:18px;padding:14px 16px;background:var(--mint-soft);border-radius:12px;font-size:15px;font-weight:700;text-align:center">결제 예정 금액: 월 5,500원</div>
+    <button class="go" id="goBtn" disabled>카드 등록하고 시작하기</button>
+    <div class="note">결제는 토스페이먼츠를 통해 안전하게 처리되며, 카드 정보는 회사에 저장되지 않습니다.</div>
+  </div>
+
+  <div id="done-view" class="panel hide">
+    <div class="ic">🌱</div><h2>구독이 시작되었어요</h2>
+    <p id="done-msg">이제 simjios.com에서 아이와 함께 하루 1분을 시작해 보세요.</p>
+    <button class="go" onclick="location.href='/app'">앱으로 가기</button>
+  </div>
+
+  <div id="fail-view" class="panel hide">
+    <div class="ic">😢</div><h2>결제가 완료되지 않았어요</h2>
+    <p id="fail-msg">다시 시도하시거나, 문제가 계속되면 1800-8699로 연락 주세요.</p>
+    <button class="go" onclick="location.href='/subscribe'">다시 시도하기</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  var params = new URLSearchParams(location.search);
+  var authKey = params.get('authKey'), custKey = params.get('customerKey');
+
+  // 카드 등록 성공 리다이렉트 처리
+  if (authKey && custKey) {
+    document.getElementById('form-view').classList.add('hide');
+    var meta = {};
+    try { meta = JSON.parse(sessionStorage.getItem('simji_sub')||'{}'); } catch(e){}
+    fetch('/billing/issue', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ authKey:authKey, customerKey:custKey, email:meta.email||'', plan:meta.plan||'regular', amount:meta.amount||9900, period:meta.period||'month' }) })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.ok){ document.getElementById('done-view').classList.remove('hide');
+          document.getElementById('done-msg').textContent = (d.cardCompany||'')+' 카드(****'+(d.last4||'')+') 등록 완료 · 매달 자동결제됩니다. 이제 아이와 함께 시작해요.';
+          sessionStorage.removeItem('simji_sub');
+        } else { fail(d.message||'빌링키 발급 실패'); }
+      }).catch(function(){ fail('네트워크 오류'); });
+    return;
+  }
+  // 결제 실패 리다이렉트
+  if (params.get('code')) { document.getElementById('form-view').classList.add('hide');
+    document.getElementById('fail-view').classList.remove('hide');
+    document.getElementById('fail-msg').textContent = (params.get('message')||'결제가 취소되었습니다.'); return; }
+
+  function fail(msg){ document.getElementById('done-view').classList.add('hide');
+    document.getElementById('fail-view').classList.remove('hide'); document.getElementById('fail-msg').textContent = msg; }
+
+  // 요금제 선택 + 금액 요약
+  var cards = document.querySelectorAll('.card');
+  function won(n){ return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function updateSummary(){
+    var sel = document.querySelector('.card.sel');
+    var amt = parseInt(sel.getAttribute('data-amount'),10);
+    var per = sel.getAttribute('data-period')==='year' ? '연' : '월';
+    document.getElementById('summary').textContent = '결제 예정 금액: '+per+' '+won(amt)+'원';
+  }
+  cards.forEach(function(c){ c.addEventListener('click', function(){ cards.forEach(function(x){x.classList.remove('sel');}); c.classList.add('sel'); updateSummary(); }); });
+  updateSummary();
+
+  // 얼리버드 잔여 자리 표시 / 마감 시 자동 숨김
+  fetch('/config').then(function(r){return r.json();}).then(function(cfg){
+    var banner=document.getElementById('eb-banner');
+    if(cfg.earlyOpen){ if(banner) banner.textContent='🔥 출시 기념 얼리버드 잔여 '+cfg.earlyRemaining+'가정'; }
+    else {
+      document.querySelectorAll('[data-plan="early"],[data-plan="early_annual"]').forEach(function(c){ c.remove(); });
+      if(banner) banner.textContent='출시 기념 얼리버드 100가정 마감 — 정가로 함께해요 🌿';
+      var vis=document.querySelectorAll('.card'); vis.forEach(function(x){x.classList.remove('sel');}); if(vis[0]) vis[0].classList.add('sel');
+      updateSummary();
+    }
+  }).catch(function(){});
+
+  // 동의/이메일 → 버튼 활성화
+  var email=document.getElementById('email'), agree=document.getElementById('agree'), goBtn=document.getElementById('goBtn');
+  function check(){ goBtn.disabled = !(agree.checked && /\S+@\S+\.\S+/.test(email.value)); }
+  email.addEventListener('input', check); agree.addEventListener('change', check);
+
+  // 결제 시작
+  goBtn.addEventListener('click', function(){
+    var sel = document.querySelector('.card.sel');
+    var plan = sel.getAttribute('data-plan');
+    var period = sel.getAttribute('data-period') || 'month';
+    var amount = parseInt(sel.getAttribute('data-amount'),10);
+    var customerKey = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+    sessionStorage.setItem('simji_sub', JSON.stringify({ email:email.value.trim(), plan:plan, amount:amount, period:period }));
+    fetch('/config').then(function(r){return r.json();}).then(function(cfg){
+      var tp = TossPayments(cfg.tossClientKey);
+      tp.requestBillingAuth('카드', {
+        customerKey: customerKey,
+        successUrl: location.origin + '/subscribe',
+        failUrl: location.origin + '/subscribe'
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
