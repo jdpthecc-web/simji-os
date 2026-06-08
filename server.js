@@ -32,6 +32,7 @@ app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'terms.html'))
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
 app.get('/youth', (req, res) => res.sendFile(path.join(__dirname, 'youth.html')));
 app.get('/subscribe', (req, res) => res.sendFile(path.join(__dirname, 'subscribe.html')));
+app.get('/admin', adminAuth, (req, res) => res.sendFile(path.join(__dirname, 'SimjiOs_admin.html')));
 
 /**
  * 결제 승인 엔드포인트

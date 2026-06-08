@@ -657,6 +657,7 @@ function openSettings(){
     +'<input id="set-name" maxlength="10" value="'+esc(p.name||'')+'" placeholder="이름/별명">'
     +gradeSelect(p.grade||'')+genderChips(p.gender||'')
     +'<button class="btn btn-primary" style="width:100%;margin-bottom:10px" onclick="saveSettings(this)">저장</button>'
+    +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="location.href=\'/subscribe\'">💛 심지OS와 계속 함께하기 (구독)</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="exportData()">💾 기록 백업하기 (파일 저장)</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="importData()">📂 백업 불러오기 (복원)</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:10px" onclick="resetAll(this)">기록 초기화 — 보호자 확인 필요 🔒</button>'
