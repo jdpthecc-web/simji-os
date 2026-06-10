@@ -468,6 +468,49 @@ app.post('/notify/kakao', adminAuth, async (req, res) => {
   res.json(out);
 });
 
+/** ===== 홈페이지 AI 도우미 (심지OS 안내) ===== */
+const SIMJI_FAQ = `
+[심지OS란]
+심지OS는 아이가 하루 1분, 뇌(腦)·마음(心)·지혜(智)·실천(動) 네 영역으로 마음과 습관을 키우는 성장 앱입니다. AI 친구와 함께 오늘의 마음을 살피고, 짧은 읽기와 작은 실천을 기록합니다. 주소는 simjios.com 입니다.
+
+[요금]
+- 얼리버드(선착 100가정): 월 5,500원 또는 연 55,000원(2개월 무료)
+- 정가: 월 9,900원 또는 연 99,000원(2개월 무료)
+- 둘째 자녀부터 10% 할인은 고객센터로 문의하시면 적용해 드립니다.
+구독은 simjios.com/subscribe 에서 안내합니다. 카드를 한 번 등록하면 매달(또는 매년) 자동 결제되고, 언제든 해지할 수 있습니다.
+
+[무료 체험과 구독]
+가입하면 2주 동안 모든 기능을 무료로 체험할 수 있어요. 2주가 지나도 아이의 핵심 활동(매일 1분 루프·AI 친구·기록)은 계속 무료로 사용할 수 있습니다. 구독하시면 부모를 위한 기능 — 카카오 알림톡(아침·방과후·대화 한마디 도착)과 월간 성장 리포트(PDF) 등 —을 이어서 이용하실 수 있어요(일부 기능은 순차적으로 제공됩니다). 앞으로 클라우드 백업·동기화, 여러 자녀 관리 등도 구독 혜택으로 추가될 예정입니다.
+
+[환불]
+이용권·환불에 대한 자세한 안내는 simjios.com/refund.html 페이지를 참고해 주세요.
+
+[누가 쓰나]
+초등학생부터 고등학생까지 사용할 수 있습니다. 만 14세 미만 자녀는 보호자(부모) 명의로 가입해 주세요.
+
+[개인정보]
+아이의 기록 원문·이름·연락처는 서버에 저장하지 않습니다. 기록은 아이 기기에 보관되고, 서버에는 익명 통계만 모입니다. 자세한 내용은 simjios.com/privacy 를 참고해 주세요.
+
+[시작 방법]
+simjios.com 에서 '앱 시작하기'를 누르고, 홈 화면에 추가하면 앱처럼 사용할 수 있습니다. 아이폰·안드로이드·PC 브라우저에서 모두 됩니다(앱스토어 설치 불필요).
+
+[문의]
+카카오 채널 http://pf.kakao.com/_hxaxbnX · 대표전화 1800-8699 · 이메일 hymps@naver.com
+운영: 주식회사 제이디글로벌에듀
+`;
+const assistHits = {};
+function assistAllow(ip){ const now=Date.now(); const arr=(assistHits[ip]||[]).filter(function(t){return now-t<300000;}); arr.push(now); assistHits[ip]=arr; return arr.length<=20; }
+app.post('/assist', async (req, res) => {
+  const q = ((req.body || {}).question || '').toString().slice(0, 400).trim();
+  if (!q) return res.json({ answer: '안녕하세요! 심지OS 도우미예요. 요금·무료 시작·환불·시작 방법 등 무엇이든 물어보세요 🌱' });
+  if (!assistAllow(req.ip || 'x')) return res.json({ answer: '문의가 잠시 몰렸어요. 잠시 후 다시 시도하시거나, 카카오 채널로 문의해 주세요.' });
+  const system = "당신은 '심지OS 도우미'입니다. 아동 마음 성장 앱 심지OS 홈페이지의 안내 도우미예요. 아래 [정보]만 근거로, 부모님께 따뜻하고 간결하게(2~4문장) 한국어로 답하세요. [정보]에 없는 내용은 지어내지 말고 '정확한 안내를 위해 카카오 채널로 문의해 주세요'라고 안내하세요. 의료·법률적 단정은 피하고, 아이의 개인정보를 묻지 마세요.\n\n[정보]\n" + SIMJI_FAQ;
+  try {
+    const answer = await aiText(q, system, 400);
+    res.json({ answer: answer || '죄송해요, 지금 답변을 불러오지 못했어요. 카카오 채널(pf.kakao.com/_hxaxbnX) 또는 1800-8699로 문의해 주세요.' });
+  } catch (e) { res.json({ answer: '죄송해요, 잠시 오류가 있었어요. 카카오 채널로 문의해 주세요.' }); }
+});
+
 /** ===== AI 에이전트 러너 + 실행 로그 (XPRIZE: AI-Native Operations 증빙) ===== */
 const AGENT_LOG = path.join(__dirname, 'agent_log.jsonl');
 const AGENT_STATE = path.join(__dirname, 'agent_state.json');

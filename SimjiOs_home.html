@@ -290,6 +290,7 @@ footer .logo{color:#fff;font-size:17px;margin-bottom:10px}
     <p class="reveal">1분이면 충분합니다. 측정에서 시작해 마음·읽기·실천으로, 그리고 부모와의 대화로.</p>
     <a href="/app" class="btn btn-primary reveal">앱 시작하기</a>
     <a href="/subscribe" class="btn reveal" style="background:#fff;color:var(--navy);margin-left:10px">구독하기</a>
+    <p class="reveal" style="font-size:14px;opacity:.82;margin-top:14px">2주 무료 체험 · 이후에도 아이의 핵심 활동은 계속 무료예요</p>
   </div>
 </section>
 
@@ -299,6 +300,7 @@ footer .logo{color:#fff;font-size:17px;margin-bottom:10px}
       <div style="max-width:300px">
         <div class="logo"><span class="han">심지OS</span></div>
         <div class="biz">책이 설명한 뇌심지동 루프를, AI가 매일 돌리는 교육 운영체계.</div>
+        <a href="http://pf.kakao.com/_hxaxbnX" target="_blank" style="display:inline-flex;align-items:center;gap:7px;background:#FEE500;color:#3C1E1E;font-weight:700;font-size:14px;text-decoration:none;padding:10px 16px;border-radius:10px;margin-top:14px">💬 카카오톡 채널 문의</a>
       </div>
       <div>
         <div style="color:#fff;font-weight:700;margin-bottom:10px">바로가기</div>
@@ -334,6 +336,65 @@ footer .logo{color:#fff;font-size:17px;margin-bottom:10px}
     for(var m=0;m<as.length;m++){ var h=as[m].getAttribute('href'); if(map[h]) as[m].setAttribute('href',map[h]); }
   }
 })();
+</script>
+<!-- 심지OS AI 도우미 -->
+<div id="simji-help">
+  <button id="sh-fab" aria-label="심지OS 도우미 문의" onclick="shToggle()">
+    <span id="sh-fab-ic">💬</span><span id="sh-fab-tx">문의하기</span>
+  </button>
+  <div id="sh-panel" role="dialog" aria-label="심지OS 도우미">
+    <div id="sh-head">
+      <div><div id="sh-title">심지OS 도우미</div><div id="sh-sub">무엇이든 물어보세요 🌱</div></div>
+      <button id="sh-close" aria-label="닫기" onclick="shToggle()">×</button>
+    </div>
+    <div id="sh-body"></div>
+    <div id="sh-chips">
+      <button onclick="shAsk('요금이 어떻게 되나요?')">요금</button>
+      <button onclick="shAsk('무료로 써볼 수 있나요?')">무료로 시작</button>
+      <button onclick="shAsk('어떻게 시작하나요?')">시작 방법</button>
+      <button onclick="shAsk('환불은 어떻게 하나요?')">환불</button>
+    </div>
+    <div id="sh-input">
+      <input id="sh-q" type="text" placeholder="궁금한 점을 입력하세요" onkeydown="if(event.key==='Enter')shSend()">
+      <button onclick="shSend()" aria-label="보내기">↑</button>
+    </div>
+    <div id="sh-foot">바로 답을 못 찾으면 <a href="http://pf.kakao.com/_hxaxbnX" target="_blank">카카오 채널로 문의</a></div>
+  </div>
+</div>
+<style>
+  #sh-fab{position:fixed;right:20px;bottom:20px;z-index:9999;display:flex;align-items:center;gap:8px;background:var(--teal);color:#fff;border:0;border-radius:999px;padding:13px 20px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 8px 24px rgba(15,118,110,.35)}
+  #sh-fab-ic{font-size:18px}
+  #sh-panel{position:fixed;right:20px;bottom:84px;z-index:9999;width:340px;max-width:calc(100vw - 32px);background:#fff;border-radius:18px;box-shadow:0 16px 48px rgba(26,46,74,.28);display:none;flex-direction:column;overflow:hidden}
+  #sh-panel.on{display:flex}
+  #sh-head{background:var(--navy);color:#fff;padding:16px 18px;display:flex;justify-content:space-between;align-items:flex-start}
+  #sh-title{font-weight:800;font-size:16px}#sh-sub{font-size:12px;opacity:.85;margin-top:2px}
+  #sh-close{background:none;border:0;color:#fff;font-size:24px;line-height:1;cursor:pointer;opacity:.8}
+  #sh-body{padding:16px;max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;font-size:14px}
+  .sh-msg{padding:10px 13px;border-radius:14px;max-width:86%;white-space:pre-wrap;line-height:1.6}
+  .sh-u{align-self:flex-end;background:var(--navy);color:#fff;border-bottom-right-radius:4px}
+  .sh-a{align-self:flex-start;background:var(--mint-soft);color:var(--ink);border-bottom-left-radius:4px}
+  .sh-a.think{opacity:.6}
+  #sh-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 16px 8px}
+  #sh-chips button{background:#fff;border:1.5px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12.5px;color:var(--teal);font-weight:600;font-family:inherit;cursor:pointer}
+  #sh-input{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line)}
+  #sh-q{flex:1;border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none}
+  #sh-input button{background:var(--teal);color:#fff;border:0;border-radius:12px;width:42px;font-size:18px;font-weight:700;cursor:pointer}
+  #sh-foot{font-size:11.5px;color:var(--muted);text-align:center;padding:0 14px 12px}
+  #sh-foot a{color:var(--teal);font-weight:600}
+</style>
+<script>
+  var shOpen=false, shBusy=false;
+  function shToggle(){ shOpen=!shOpen; document.getElementById('sh-panel').classList.toggle('on',shOpen);
+    if(shOpen && !document.getElementById('sh-body').dataset.greeted){ shAdd('a','안녕하세요! 심지OS 도우미예요. 요금·무료 시작·환불·시작 방법 등 무엇이든 편하게 물어보세요 🌱'); document.getElementById('sh-body').dataset.greeted='1'; } }
+  function shAdd(who,text){ var b=document.getElementById('sh-body'); var d=document.createElement('div'); d.className='sh-msg '+(who==='u'?'sh-u':'sh-a'); d.textContent=text; b.appendChild(d); b.scrollTop=b.scrollHeight; return d; }
+  function shAsk(q){ document.getElementById('sh-q').value=q; shSend(); }
+  function shSend(){ if(shBusy) return; var inp=document.getElementById('sh-q'); var q=inp.value.trim(); if(!q) return;
+    inp.value=''; shAdd('u',q); shBusy=true; var t=shAdd('a','…'); t.classList.add('think');
+    fetch('/assist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})})
+      .then(function(r){return r.json();}).then(function(d){ t.classList.remove('think'); t.textContent=d.answer||'카카오 채널로 문의해 주세요.'; })
+      .catch(function(){ t.classList.remove('think'); t.textContent='연결이 불안정해요. 카카오 채널로 문의해 주세요.'; })
+      .finally(function(){ shBusy=false; });
+  }
 </script>
 </body>
 </html>
