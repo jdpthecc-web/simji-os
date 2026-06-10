@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="심지OS">
-<link rel="apple-touch-icon" href="/simji-icon-180.png">
+<link rel="apple-touch-icon" href="/simji-icon-180.png?v=2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -182,7 +182,7 @@ const DB = {
   addGratitudes(arr){ const d=this.load(); if(!d.gratitudes) d.gratitudes=[]; const t=this.today(); arr.forEach(function(g){ d.gratitudes.push({date:t,at:Date.now(),text:g}); }); this.save(d); },
   recentStateIndices(n){ const d=this.load(); const out=Object.keys(d.days).sort().map(function(k){ return {date:k, idx:d.days[k].stateIndex}; }).filter(function(x){ return x.idx!=null; }); return out.slice(-(n||7)); },
   profile(){ const d=this.load(); return d.profile||null; },
-  setProfile(name,band,grade){ const d=this.load(); const id=(d.profile&&d.profile.id)||('c_'+Math.random().toString(36).slice(2,8)); d.profile={name:name,id:id,band:band||(d.profile&&d.profile.band)||'elem',grade:grade||(d.profile&&d.profile.grade)||''}; this.save(d); },
+  setProfile(name,band,grade,gender){ const d=this.load(); const id=(d.profile&&d.profile.id)||('c_'+Math.random().toString(36).slice(2,8)); d.profile={name:name,id:id,band:band||(d.profile&&d.profile.band)||'elem',grade:grade||(d.profile&&d.profile.grade)||'',gender:gender||(d.profile&&d.profile.gender)||''}; this.save(d); },
   bestReaction(){ const d=this.load(); return d.bestRt||null; },
   setBestReaction(ms){ const d=this.load(); d.bestRt=ms; this.save(d); },
   last7(){ const d=this.load(); const out=[]; const names=['일','월','화','수','목','금','토'];
@@ -618,6 +618,13 @@ function gradeSelect(cur){
     + GRADES.map(function(g){ return '<option value="'+g[0]+'"'+(cur===g[0]?' selected':'')+'>'+g[1]+'</option>'; }).join('')
     + '</select>';
 }
+function genderChips(cur){
+  const opts=[['m','남자'],['f','여자'],['na','안 알려줄래']];
+  return '<div class="chips" style="justify-content:center;margin:0 0 14px">'+opts.map(function(o){
+    return '<button class="chip"'+(cur===o[0]?' style="background:var(--mint-soft);border-color:var(--mint)"':'')+' onclick="selGender(this,\''+o[0]+'\')">'+o[1]+'</button>';
+  }).join('')+'</div>';
+}
+function selGender(btn,g){ window._genderPick=g; const sibs=btn.parentNode.children; for(var i=0;i<sibs.length;i++){ sibs[i].style.background=''; sibs[i].style.borderColor=''; } btn.style.background='var(--mint-soft)'; btn.style.borderColor='var(--mint)'; }
 function selGrade(g){ window._gradePick=g; window._bandPick=(g.charAt(0)==='e')?'elem':'teen'; }
 function selBand(btn,bd){ window._bandPick=bd; const sibs=btn.parentNode.children; for(var i=0;i<sibs.length;i++){ sibs[i].style.background=''; sibs[i].style.borderColor=''; } btn.style.background='var(--mint-soft)'; btn.style.borderColor='var(--mint)'; }
 function vocative(n){ if(!n) return ''; const c=n.charCodeAt(n.length-1); if(c>=0xAC00&&c<=0xD7A3){ return n+(((c-0xAC00)%28)>0?'아':'야'); } return n; }
@@ -629,7 +636,7 @@ function maybeOnboard(){
     +'<h2>만나서 반가워요!</h2>'
     +'<p>심지OS는 매일 1분, 너의 하루를 함께 도는 친구야.<br>腦 상태 보기 → 心 마음 적기 → 智 읽기 → 動 작은 실천!</p>'
     +'<input id="ob-name" maxlength="10" placeholder="뭐라고 불러줄까? (이름/별명)">'
-    +gradeSelect('')
+    +gradeSelect('')+genderChips('')
     +'<button class="btn btn-primary" style="width:100%" onclick="finishOnboard(this)">시작하기</button>'
     +'<p style="margin-top:10px;font-size:11px">의료 진단이 아니라 매일의 성장을 돕는 교육 도구예요.</p>'
   );
@@ -638,7 +645,8 @@ function finishOnboard(btn){
   const v=document.getElementById('ob-name').value.trim();
   if(!v){ document.getElementById('ob-name').placeholder='이름이나 별명을 알려줘!'; return; }
   if(!window._gradePick){ toast('학년을 골라줘 — 초1부터 고3까지 있어 🙂'); return; }
-  DB.setProfile(v, window._bandPick||'elem', window._gradePick); logEvent('onboard',{band:window._bandPick||'elem',grade:window._gradePick});
+  if(!window._genderPick){ toast('마지막 하나 — 성별을 골라줘 (안 알려줘도 괜찮아)'); return; }
+  DB.setProfile(v, window._bandPick||'elem', window._gradePick, window._genderPick); logEvent('onboard',{band:window._bandPick||'elem',grade:window._gradePick,gender:window._genderPick});
   btn.closest('.ovl').remove(); renderHome(); toast(vocative(v)+', 환영해!');
 }
 function openSettings(){
@@ -647,8 +655,11 @@ function openSettings(){
   showOverlay(
     '<h2>설정</h2>'
     +'<input id="set-name" maxlength="10" value="'+esc(p.name||'')+'" placeholder="이름/별명">'
-    +gradeSelect(p.grade||'')
+    +gradeSelect(p.grade||'')+genderChips(p.gender||'')
     +'<button class="btn btn-primary" style="width:100%;margin-bottom:10px" onclick="saveSettings(this)">저장</button>'
+    +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="location.href=\'/subscribe\'">💛 심지OS와 계속 함께하기 (구독)</button>'
+    +'<div style="font-size:12px;color:#7A8A85;line-height:1.6;margin:2px 2px 12px">2주 무료 체험 후에도 아이의 매일 1분 활동·AI 친구·기록은 계속 무료예요. 카카오 알림톡과 월간 성장 리포트 등 부모 기능은 구독으로 이용할 수 있어요.</div>'
+    +'<button class="btn" style="width:100%;margin-bottom:10px;background:#FEE500;color:#3C1E1E;font-weight:700;border:0" onclick="window.open(\'http://pf.kakao.com/_hxaxbnX\',\'_blank\')">💬 카카오톡 채널로 문의</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="exportData()">💾 기록 백업하기 (파일 저장)</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="importData()">📂 백업 불러오기 (복원)</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:10px" onclick="resetAll(this)">기록 초기화 — 보호자 확인 필요 🔒</button>'
@@ -656,7 +667,7 @@ function openSettings(){
     +'<p style="margin-top:12px;font-size:11px">심지OS는 의료기기가 아니며 진단·치료 목적이 아니에요.</p>'
   );
 }
-function saveSettings(btn){ const v=document.getElementById('set-name').value.trim(); const p=DB.profile()||{}; DB.setProfile(v||p.name||'', window._bandPick||p.band||'elem', window._gradePick||p.grade||''); window._bandPick=null; window._gradePick=null; btn.closest('.ovl').remove(); renderHome(); toast('저장했어요'); }
+function saveSettings(btn){ const v=document.getElementById('set-name').value.trim(); const p=DB.profile()||{}; DB.setProfile(v||p.name||'', window._bandPick||p.band||'elem', window._gradePick||p.grade||'', window._genderPick||p.gender||''); window._bandPick=null; window._gradePick=null; window._genderPick=null; btn.closest('.ovl').remove(); renderHome(); toast('저장했어요'); }
 function resetAll(btn){
   // 보호자 게이트: 어른만 풀 수 있는 확인 (어린이 앱 표준 패턴)
   const x=4+Math.floor(Math.random()*5), y=6+Math.floor(Math.random()*4);
