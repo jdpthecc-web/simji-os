@@ -32,6 +32,7 @@ app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'terms.html'))
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
 app.get('/youth', (req, res) => res.sendFile(path.join(__dirname, 'youth.html')));
 app.get('/subscribe', (req, res) => res.sendFile(path.join(__dirname, 'subscribe.html')));
+app.get('/paytest', (req, res) => res.sendFile(path.join(__dirname, 'paytest.html')));
 app.get('/admin', adminAuth, (req, res) => res.sendFile(path.join(__dirname, 'SimjiOs_admin.html')));
 
 /**
@@ -327,6 +328,53 @@ app.post('/billing/issue', async (req, res) => {
     console.log('🔑 빌링키 발급/저장:', customerKey, rec.cardCompany, rec.last4, rec.amount+'원/'+period);
     return res.json({ ok: true, cardCompany: rec.cardCompany, last4: rec.last4 }); // billingKey는 클라이언트로 보내지 않음
   } catch (e) { console.error('서버 오류:', e); return res.status(500).json({ message: '서버 오류: ' + e.message }); }
+});
+
+/** ===== 포트원(PortOne V2) 결제 — KPN 채널 ===== */
+const PORTONE_SECRET = process.env.PORTONE_API_SECRET || '';
+const PORTONE_PRICE = { early: 5500, regular: 9900 };
+async function portoneCharge(rec){
+  if (!PORTONE_SECRET) return { ok:false, message:'PORTONE_API_SECRET 미설정(테스트 단계)' };
+  const paymentId = 'sub_' + rec.customerKey + '_' + new Date().toISOString().slice(0,7).replace('-','');
+  try {
+    const r = await fetch('https://api.portone.io/payments/' + encodeURIComponent(paymentId) + '/billing-key', {
+      method:'POST',
+      headers:{ 'Authorization':'PortOne ' + PORTONE_SECRET, 'Content-Type':'application/json' },
+      body: JSON.stringify({ billingKey: rec.billingKey, orderName:'심지OS 월 구독', amount:{ total: rec.amount }, currency:'KRW' })
+    });
+    const data = await r.json().catch(function(){ return {}; });
+    return { ok: r.ok, status: r.status, data: data };
+  } catch(e){ return { ok:false, message:String(e) }; }
+}
+// 빌키 발급 결과 저장 — 프론트가 requestIssueBillingKey 성공 후 호출(공개)
+app.post('/billing/portone-issue', async (req, res) => {
+  const b = req.body || {};
+  const billingKey = (b.billingKey || '').toString();
+  if (!billingKey) return res.json({ ok:false, message:'빌링키가 없습니다.' });
+  const plan = (b.plan === 'early') ? 'early' : 'regular';
+  if (plan === 'early' && earlyCount() >= EARLY_LIMIT) return res.status(409).json({ ok:false, message:'얼리버드 100가정이 마감되었습니다. 정가로 함께해 주세요.' });
+  const amount = PORTONE_PRICE[plan];                 // 서버 정가표 강제(위·변조 방지)
+  const email = (b.email || '').toString().slice(0,120);
+  const customerKey = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+  const next = new Date(); next.setMonth(next.getMonth() + 1);
+  const rec = { customerKey: customerKey, billingKey: billingKey, email: email, plan: plan, amount: amount,
+                period:'month', status:'active', pg:'portone', issuedAt: new Date().toISOString(), nextBilling: next.toISOString() };
+  billingMap[customerKey] = rec; saveBilling();
+  try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'subscription', childId:customerKey, status:'active', mrr:amount, amount:amount, period:'month', plan:plan, ts:Date.now() })+'\n'); } catch(e){}
+  portoneCharge(rec).then(function(c){ if(c.ok){ rec.lastCharge = new Date().toISOString(); saveBilling(); } else { console.log('ℹ️ 첫 청구 보류:', c.message || (c.data && c.data.message)); } }).catch(function(){});
+  console.log('🔑 [포트원] 빌키 저장:', customerKey, plan, amount + '원/월');
+  return res.json({ ok:true, customerKey: customerKey });
+});
+// 단건결제 검증(선택) — 프론트가 requestPayment 성공 후 호출
+app.post('/payment/portone-verify', async (req, res) => {
+  const paymentId = ((req.body||{}).paymentId || '').toString();
+  if (!paymentId) return res.json({ ok:false, message:'paymentId 없음' });
+  if (!PORTONE_SECRET) return res.json({ ok:true, note:'테스트 단계(시크릿 미설정)' });
+  try {
+    const r = await fetch('https://api.portone.io/payments/' + encodeURIComponent(paymentId), { headers:{ 'Authorization':'PortOne ' + PORTONE_SECRET } });
+    const data = await r.json().catch(function(){ return {}; });
+    return res.json({ ok: r.ok, status: data.status, amount: (data.amount && data.amount.total) });
+  } catch(e){ return res.json({ ok:false, message:String(e) }); }
 });
 
 // 자동 청구 — 운영자/스케줄러가 호출(관리자 인증 보호)

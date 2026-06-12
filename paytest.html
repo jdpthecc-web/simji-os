@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>심지OS 결제 테스트 (심사용)</title>
+<script src="https://cdn.portone.io/v2/browser-sdk.js"></script>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:#F7FAF9;color:#16324F;max-width:480px;margin:0 auto;padding:28px 20px 60px;line-height:1.6}
+  h1{font-size:20px;margin:0 0 6px}
+  .desc{color:#7A8A85;font-size:14px;margin-bottom:20px}
+  .sec{background:#fff;border:1px solid #E2E8E5;border-radius:14px;padding:18px;margin:14px 0}
+  .sec b{font-size:16px}
+  .sec p{font-size:13px;color:#7A8A85;margin:6px 0 12px}
+  button{width:100%;padding:14px;border:0;border-radius:12px;background:#2F9E83;color:#fff;font-size:16px;font-weight:700;cursor:pointer}
+  pre{background:#F0F4F2;padding:12px;border-radius:8px;font-size:12px;white-space:pre-wrap;word-break:break-all;color:#334}
+</style>
+</head>
+<body>
+  <h1>심지OS 결제창 테스트</h1>
+  <div class="desc">테스트 모드입니다. 각 버튼으로 결제창을 띄우고, 카드사(하나카드) 선택·인증 화면을 캡처해 주세요. 실제 금액은 청구되지 않습니다.</div>
+
+  <div class="sec">
+    <b>① 인증 단건결제 (1,000원)</b>
+    <p>결제수단 선택 → 결제창 노출 → 카드사 인증 → 결제 완료</p>
+    <button onclick="single()">단건결제 결제창 열기</button>
+  </div>
+
+  <div class="sec">
+    <b>② 정기결제 카드 등록 (빌키)</b>
+    <p>카드 등록 진입 → 카드정보 입력 → 본인인증 → 등록 완료</p>
+    <button onclick="billing()">카드 등록 결제창 열기</button>
+  </div>
+
+  <pre id="out">결과가 여기에 표시됩니다.</pre>
+
+<script>
+  var STORE_ID = "store-e73a99d4-6173-4071-b63d-fb6b414a4212";
+  var CHANNEL_KEY = "channel-key-9e1a3af1-3453-4703-97dd-b04e969f8d62";
+  function show(o){ document.getElementById('out').textContent = JSON.stringify(o, null, 2); }
+
+  async function single(){
+    try {
+      var r = await PortOne.requestPayment({
+        storeId: STORE_ID, channelKey: CHANNEL_KEY,
+        paymentId: 'test_' + Date.now().toString(36),
+        orderName: '심지OS 테스트 결제', totalAmount: 1000, currency: 'CURRENCY_KRW', payMethod: 'CARD',
+        customer: { fullName: '테스트', email: 'test@simjios.com' }
+      });
+      show(r);
+    } catch(e){ show({ error: String(e) }); }
+  }
+
+  async function billing(){
+    try {
+      var r = await PortOne.requestIssueBillingKey({
+        storeId: STORE_ID, channelKey: CHANNEL_KEY, billingKeyMethod: 'CARD',
+        issueId: 'test_' + Date.now().toString(36), issueName: '심지OS 구독 카드등록',
+        customer: { email: 'test@simjios.com' }
+      });
+      show(r);
+    } catch(e){ show({ error: String(e) }); }
+  }
+</script>
+</body>
+</html>
