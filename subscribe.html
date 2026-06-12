@@ -41,20 +41,10 @@
       <div class="pr">월 5,500원 <small>· 커피 한 잔 값</small></div>
       <div class="ds">출시 기념 한정 (정가 9,900원의 약 45% 할인)</div>
     </div>
-    <div class="card" data-plan="early_annual" data-amount="55000" data-period="year">
-      <div class="nm">얼리버드 연 <span class="badge">2개월 무료</span></div>
-      <div class="pr">연 55,000원 <small>· 월 4,583원 꼴</small></div>
-      <div class="ds">선착 100가정 한정 · 가장 큰 혜택 (1년에 한 번 결제)</div>
-    </div>
     <div class="card" data-plan="regular" data-amount="9900" data-period="month">
       <div class="nm">정가 월 구독</div>
       <div class="pr">월 9,900원</div>
       <div class="ds">자녀 1인 기준 · 매달 결제</div>
-    </div>
-    <div class="card" data-plan="annual" data-amount="99000" data-period="year">
-      <div class="nm">정가 연 구독 <span class="badge">2개월 무료</span></div>
-      <div class="pr">연 99,000원 <small>· 월 8,250원 꼴</small></div>
-      <div class="ds">1년에 한 번 결제 · 월 9,900원 대비 약 17% 할인</div>
     </div>
 
     <div class="field-label">보호자 이메일</div>
@@ -127,7 +117,7 @@
     var banner=document.getElementById('eb-banner');
     if(cfg.earlyOpen){ if(banner) banner.textContent='🔥 출시 기념 얼리버드 잔여 '+cfg.earlyRemaining+'가정'; }
     else {
-      document.querySelectorAll('[data-plan="early"],[data-plan="early_annual"]').forEach(function(c){ c.remove(); });
+      document.querySelectorAll('[data-plan="early"]').forEach(function(c){ c.remove(); });
       if(banner) banner.textContent='출시 기념 얼리버드 100가정 마감 — 정가로 함께해요 🌿';
       var vis=document.querySelectorAll('.card'); vis.forEach(function(x){x.classList.remove('sel');}); if(vis[0]) vis[0].classList.add('sel');
       updateSummary();
