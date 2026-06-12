@@ -43,7 +43,7 @@
     try {
       var r = await PortOne.requestPayment({
         storeId: STORE_ID, channelKey: CHANNEL_KEY,
-        paymentId: 'test_' + Date.now().toString(36),
+        paymentId: 'test' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
         orderName: '심지OS 테스트 결제', totalAmount: 1000, currency: 'CURRENCY_KRW', payMethod: 'CARD',
         customer: { fullName: '테스트', email: 'test@simjios.com' }
       });
@@ -55,8 +55,8 @@
     try {
       var r = await PortOne.requestIssueBillingKey({
         storeId: STORE_ID, channelKey: CHANNEL_KEY, billingKeyMethod: 'CARD',
-        issueId: 'test_' + Date.now().toString(36), issueName: '심지OS 구독 카드등록',
-        customer: { email: 'test@simjios.com' }
+        issueId: 'test' + Date.now().toString(36), issueName: '심지OS 구독 카드등록',
+        customer: { fullName: '테스트', email: 'test@simjios.com' }
       });
       show(r);
     } catch(e){ show({ error: String(e) }); }

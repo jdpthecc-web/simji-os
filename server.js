@@ -335,7 +335,7 @@ const PORTONE_SECRET = process.env.PORTONE_API_SECRET || '';
 const PORTONE_PRICE = { early: 5500, regular: 9900 };
 async function portoneCharge(rec){
   if (!PORTONE_SECRET) return { ok:false, message:'PORTONE_API_SECRET 미설정(테스트 단계)' };
-  const paymentId = 'sub_' + rec.customerKey + '_' + new Date().toISOString().slice(0,7).replace('-','');
+  const paymentId = 'sub' + rec.customerKey.replace(/[^a-zA-Z0-9]/g,'') + new Date().toISOString().slice(0,7).replace(/-/g,'');
   try {
     const r = await fetch('https://api.portone.io/payments/' + encodeURIComponent(paymentId) + '/billing-key', {
       method:'POST',
