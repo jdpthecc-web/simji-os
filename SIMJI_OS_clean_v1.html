@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="심지OS">
-<link rel="apple-touch-icon" href="/simji-icon-180.png">
+<link rel="apple-touch-icon" href="/simji-icon-180.png?v=2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -641,13 +641,54 @@ function maybeOnboard(){
     +'<p style="margin-top:10px;font-size:11px">의료 진단이 아니라 매일의 성장을 돕는 교육 도구예요.</p>'
   );
 }
+/* ---------- 2주 무료 체험 · 구독 안내 카드 ---------- */
+function trialInfo(){
+  var k='simji_trial_start', s=localStorage.getItem(k);
+  if(!s){ s=String(Date.now()); localStorage.setItem(k,s); }
+  var days=Math.floor((Date.now()-parseInt(s,10))/86400000);
+  return { dayNum: days+1, left: Math.max(0,14-days), ended: days>=14 };
+}
+function showWelcomeCard(force){
+  if(localStorage.getItem('simji_subscribed')==='1') return;      // 이미 구독한 분은 안 보임
+  var today=new Date().toISOString().slice(0,10);
+  var ti=trialInfo();
+  var head, sub;
+  if(ti.ended){
+    // 체험 종료 후: 매 진입 안내(하루 한 번)
+    if(localStorage.getItem('simji_wcard_day')===today) return;
+    head='무료 체험이 끝났어요 🌱';
+    sub='그동안 함께해줘서 고마워요. 아이의 <b>매일 1분 활동·AI 친구·기록</b>은 계속 무료예요. 카카오 알림톡과 <b>월간 성장 리포트</b> 같은 부모 기능은 구독으로 이어갈 수 있어요.';
+  } else if(force){
+    // 첫날 환영(온보딩 직후 1회)
+    head='환영해요! 🌱';
+    sub='지금부터 <b>2주 무료 체험</b>이 시작돼요. 매일 1분, 아이의 마음·읽기·실천을 함께 돌아요. 체험 후에도 아이 핵심활동은 계속 무료, <b>부모 기능</b>은 구독으로 이어집니다.';
+  } else {
+    // 재방문: D-7에 1회, D-3 이하부터 매일(하루 한 번). 그 외 날은 조용.
+    var showToday = (ti.left===7) || (ti.left<=3);
+    if(!showToday) return;
+    if(localStorage.getItem('simji_wcard_day')===today) return;  // 같은 날 중복 방지
+    head='무료 체험 D-'+ti.left+' 💛';
+    sub=(ti.left<=3)
+      ? '무료 체험이 곧 끝나요. 아이의 매일 1분 활동은 계속 무료지만, 카카오 알림톡·<b>월간 성장 리포트</b> 등 부모 기능을 이어가려면 지금 구독해보세요.'
+      : '무료 체험이 <b>일주일</b> 남았어요. 아이의 매일 1분 활동은 계속 무료예요. 부모 기능으로 더 깊이 함께하려면 구독해보세요.';
+  }
+  localStorage.setItem('simji_wcard_day', today);
+  showOverlay(
+    '<div style="font-size:34px;margin-bottom:4px">💛</div>'
+    +'<h2>'+head+'</h2>'
+    +'<p style="line-height:1.7">'+sub+'</p>'
+    +'<button class="btn btn-primary" style="width:100%;margin:8px 0 8px" onclick="location.href=\'/subscribe\'">💛 구독하고 계속 함께하기</button>'
+    +'<button class="btn btn-ghost" style="width:100%;margin-bottom:6px" onclick="this.closest(\'.ovl\').remove()">먼저 둘러볼게요</button>'
+    +'<button class="btn btn-ghost" style="width:100%;font-size:12px;color:#7A8A85" onclick="localStorage.setItem(\'simji_subscribed\',\'1\');this.closest(\'.ovl\').remove()">이미 구독했어요</button>'
+  );
+}
 function finishOnboard(btn){
   const v=document.getElementById('ob-name').value.trim();
   if(!v){ document.getElementById('ob-name').placeholder='이름이나 별명을 알려줘!'; return; }
   if(!window._gradePick){ toast('학년을 골라줘 — 초1부터 고3까지 있어 🙂'); return; }
   if(!window._genderPick){ toast('마지막 하나 — 성별을 골라줘 (안 알려줘도 괜찮아)'); return; }
   DB.setProfile(v, window._bandPick||'elem', window._gradePick, window._genderPick); logEvent('onboard',{band:window._bandPick||'elem',grade:window._gradePick,gender:window._genderPick});
-  btn.closest('.ovl').remove(); renderHome(); toast(vocative(v)+', 환영해!');
+  btn.closest('.ovl').remove(); renderHome(); toast(vocative(v)+', 환영해!'); setTimeout(function(){showWelcomeCard(true);},600);
 }
 function openSettings(){
   const p=DB.profile()||{name:''};
@@ -1109,8 +1150,10 @@ function saveDream(btn){
 }
 
 /* ---------- Init ---------- */
+if(location.search.indexOf('subscribed=1')>=0){ localStorage.setItem('simji_subscribed','1'); try{history.replaceState({},'',location.pathname);}catch(e){} }
 renderHome();
 maybeOnboard();
+if(DB.profile()) showWelcomeCard(false);
 checkMilestones();
 checkGrowthMoments();
 checkFruitMoments();
