@@ -64,7 +64,7 @@
   <div id="done-view" class="panel hide">
     <div class="ic">🌱</div><h2>구독이 시작되었어요</h2>
     <p id="done-msg">이제 simjios.com에서 아이와 함께 하루 1분을 시작해 보세요.</p>
-    <button class="go" onclick="location.href='/app?subscribed=1'">앱으로 가기</button>
+    <button class="go" onclick="location.href='/app?subscribed=1&e='+encodeURIComponent((document.getElementById('email').value||'').trim())">앱으로 가기</button>
   </div>
 
   <div id="fail-view" class="panel hide">
