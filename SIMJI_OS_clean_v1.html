@@ -649,37 +649,30 @@ function trialInfo(){
   return { dayNum: days+1, left: Math.max(0,14-days), ended: days>=14 };
 }
 function showWelcomeCard(force){
-  if(localStorage.getItem('simji_subscribed')==='1') return;      // 이미 구독한 분은 안 보임
+  if(isSubscribed()) return;      // 이미 구독한 분은 안 보임
   var today=new Date().toISOString().slice(0,10);
   var ti=trialInfo();
   var head, sub;
-  if(ti.ended){
-    // 체험 종료 후: 매 진입 안내(하루 한 번)
-    if(localStorage.getItem('simji_wcard_day')===today) return;
-    head='무료 체험이 끝났어요 🌱';
-    sub='그동안 함께해줘서 고마워요. 아이의 <b>매일 1분 활동·AI 친구·기록</b>은 계속 무료예요. 카카오 알림톡과 <b>월간 성장 리포트</b> 같은 부모 기능은 구독으로 이어갈 수 있어요.';
-  } else if(force){
+  if(force){
     // 첫날 환영(온보딩 직후 1회)
     head='환영해요! 🌱';
-    sub='지금부터 <b>2주 무료 체험</b>이 시작돼요. 매일 1분, 아이의 마음·읽기·실천을 함께 돌아요. 체험 후에도 아이 핵심활동은 계속 무료, <b>부모 기능</b>은 구독으로 이어집니다.';
+    sub='매일 1분, 아이의 마음·읽기·실천을 함께 돌아요. 아이의 <b>매일 1분 활동·AI 친구·기록</b>은 계속 무료예요. 카카오 알림톡과 <b>월간 성장 리포트</b> 등 부모 기능은 지금 구독하면 바로 이어집니다.';
   } else {
-    // 재방문: D-7에 1회, D-3 이하부터 매일(하루 한 번). 그 외 날은 조용.
+    // 재방문: 며칠에 한 번만 조용히 안내(하루 한 번). 그 외 날은 조용.
     var showToday = (ti.left===7) || (ti.left<=3);
     if(!showToday) return;
     if(localStorage.getItem('simji_wcard_day')===today) return;  // 같은 날 중복 방지
-    head='무료 체험 D-'+ti.left+' 💛';
-    sub=(ti.left<=3)
-      ? '무료 체험이 곧 끝나요. 아이의 매일 1분 활동은 계속 무료지만, 카카오 알림톡·<b>월간 성장 리포트</b> 등 부모 기능을 이어가려면 지금 구독해보세요.'
-      : '무료 체험이 <b>일주일</b> 남았어요. 아이의 매일 1분 활동은 계속 무료예요. 부모 기능으로 더 깊이 함께하려면 구독해보세요.';
+    head='부모 기능으로 더 깊이 💛';
+    sub='아이의 매일 1분 활동은 계속 무료예요. 카카오 알림톡·<b>월간 성장 리포트</b> 등 부모 기능을 함께 쓰고 싶다면 지금 구독해보세요. <b>커피 한 잔 값</b>으로 매달 함께해요.';
   }
   localStorage.setItem('simji_wcard_day', today);
   showOverlay(
     '<div style="font-size:34px;margin-bottom:4px">💛</div>'
     +'<h2>'+head+'</h2>'
     +'<p style="line-height:1.7">'+sub+'</p>'
-    +'<button class="btn btn-primary" style="width:100%;margin:8px 0 8px" onclick="location.href=\'/subscribe\'">💛 구독하고 계속 함께하기</button>'
+    +'<button class="btn btn-primary" style="width:100%;margin:8px 0 8px" onclick="location.href=\'/subscribe\'">💛 지금 구독하고 함께하기</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:6px" onclick="this.closest(\'.ovl\').remove()">먼저 둘러볼게요</button>'
-    +'<button class="btn btn-ghost" style="width:100%;font-size:12px;color:#7A8A85" onclick="localStorage.setItem(\'simji_subscribed\',\'1\');this.closest(\'.ovl\').remove()">이미 구독했어요</button>'
+    +'<button class="btn btn-ghost" style="width:100%;font-size:12px;color:#7A8A85" onclick="this.closest(\'.ovl\').remove();restoreByEmail(null)">이미 구독했어요 (이메일로 확인)</button>'
   );
 }
 function finishOnboard(btn){
@@ -690,6 +683,24 @@ function finishOnboard(btn){
   DB.setProfile(v, window._bandPick||'elem', window._gradePick, window._genderPick); logEvent('onboard',{band:window._bandPick||'elem',grade:window._gradePick,gender:window._genderPick});
   btn.closest('.ovl').remove(); renderHome(); toast(vocative(v)+', 환영해!'); setTimeout(function(){showWelcomeCard(true);},600);
 }
+function isSubscribed(){ return localStorage.getItem('simji_subscribed')==='1'; }
+function cancelSub(){
+  if(confirm('구독 해지는 카카오톡 채널 문의로 도와드려요.\n채널을 열까요?')){ window.open('http://pf.kakao.com/_hxaxbnX','_blank'); }
+}
+function restoreByEmail(btn){
+  var email=prompt('구독하실 때 입력한 보호자 이메일을 적어주세요.');
+  if(!email) return;
+  email=email.trim();
+  fetch('/billing/status?email='+encodeURIComponent(email)).then(function(r){return r.json();}).then(function(d){
+    if(d && d.active){
+      localStorage.setItem('simji_subscribed','1'); localStorage.setItem('simji_email',email);
+      var o=btn&&btn.closest('.ovl'); if(o) o.remove();
+      toast('구독이 확인됐어요 💛'); renderHome();
+    } else {
+      alert('해당 이메일로 활성 구독을 찾지 못했어요.\n이메일을 다시 확인하시거나, 카카오 채널로 문의해 주세요.');
+    }
+  }).catch(function(){ alert('확인 중 오류가 났어요. 잠시 후 다시 시도해 주세요.'); });
+}
 function openSettings(){
   const p=DB.profile()||{name:''};
   window._bandPick=p.band||'elem';
@@ -698,8 +709,12 @@ function openSettings(){
     +'<input id="set-name" maxlength="10" value="'+esc(p.name||'')+'" placeholder="이름/별명">'
     +gradeSelect(p.grade||'')+genderChips(p.gender||'')
     +'<button class="btn btn-primary" style="width:100%;margin-bottom:10px" onclick="saveSettings(this)">저장</button>'
-    +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="location.href=\'/subscribe\'">💛 심지OS와 계속 함께하기 (구독)</button>'
-    +'<div style="font-size:12px;color:#7A8A85;line-height:1.6;margin:2px 2px 12px">2주 무료 체험 후에도 아이의 매일 1분 활동·AI 친구·기록은 계속 무료예요. 카카오 알림톡과 월간 성장 리포트 등 부모 기능은 구독으로 이용할 수 있어요.</div>'
+    +(isSubscribed()
+      ? '<div style="width:100%;margin-bottom:8px;padding:13px;border-radius:14px;background:#E6F4EF;color:#16324F;font-weight:700;text-align:center">💛 구독 중이에요 · 함께해 주셔서 고맙습니다</div>'
+        +'<button class="btn btn-ghost" style="width:100%;margin-bottom:12px;font-size:13px;color:#7A8A85" onclick="cancelSub()">구독 해지 문의</button>'
+      : '<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="location.href=\'/subscribe\'">💛 심지OS와 계속 함께하기 (구독)</button>'
+        +'<div style="font-size:12px;color:#7A8A85;line-height:1.6;margin:2px 2px 12px">아이의 매일 1분 활동·AI 친구·기록은 계속 무료예요. 카카오 알림톡과 월간 성장 리포트 등 부모 기능은 지금 구독하면 바로 이용할 수 있어요.</div>'
+        +'<button class="btn btn-ghost" style="width:100%;margin-bottom:12px;font-size:12px;color:#7A8A85" onclick="restoreByEmail(this)">이미 구독했어요 (이메일로 확인)</button>')
     +'<button class="btn" style="width:100%;margin-bottom:10px;background:#FEE500;color:#3C1E1E;font-weight:700;border:0" onclick="window.open(\'http://pf.kakao.com/_hxaxbnX\',\'_blank\')">💬 카카오톡 채널로 문의</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="exportData()">💾 기록 백업하기 (파일 저장)</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="importData()">📂 백업 불러오기 (복원)</button>'
@@ -1150,7 +1165,21 @@ function saveDream(btn){
 }
 
 /* ---------- Init ---------- */
-if(location.search.indexOf('subscribed=1')>=0){ localStorage.setItem('simji_subscribed','1'); try{history.replaceState({},'',location.pathname);}catch(e){} }
+(function(){
+  var qs=location.search;
+  var m=qs.match(/[?&]e=([^&]+)/);
+  if(m){ try{ localStorage.setItem('simji_email', decodeURIComponent(m[1])); }catch(e){} }
+  if(qs.indexOf('subscribed=1')>=0){ localStorage.setItem('simji_subscribed','1'); }
+  if(m || qs.indexOf('subscribed=1')>=0){ try{ history.replaceState({},'',location.pathname); }catch(e){} }
+})();
+// 저장된 이메일로 서버에서 구독 재확인 — 기기 변경·앱 재설치에도 인식(활성일 때만 켬)
+(function(){
+  var email=localStorage.getItem('simji_email');
+  if(!email) return;
+  fetch('/billing/status?email='+encodeURIComponent(email)).then(function(r){return r.json();}).then(function(d){
+    if(d && d.active){ localStorage.setItem('simji_subscribed','1'); }
+  }).catch(function(){});
+})();
 renderHome();
 maybeOnboard();
 if(DB.profile()) showWelcomeCard(false);

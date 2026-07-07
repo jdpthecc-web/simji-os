@@ -365,6 +365,13 @@ app.post('/billing/portone-issue', async (req, res) => {
   console.log('🔑 [포트원] 빌키 저장:', customerKey, plan, amount + '원/월');
   return res.json({ ok:true, customerKey: customerKey });
 });
+// 이메일로 구독 상태 확인(공개) — 앱이 기기 변경·앱 재설치와 무관하게 구독을 인식하도록
+app.get('/billing/status', (req, res) => {
+  const email = (req.query.email || '').toString().trim().toLowerCase();
+  if (!email) return res.json({ active: false });
+  const active = Object.keys(billingMap).some(function(k){ var r = billingMap[k]; return (r.email||'').toLowerCase() === email && r.status === 'active'; });
+  return res.json({ active: active });
+});
 // 단건결제 검증(선택) — 프론트가 requestPayment 성공 후 호출
 app.post('/payment/portone-verify', async (req, res) => {
   const paymentId = ((req.body||{}).paymentId || '').toString();
@@ -379,17 +386,14 @@ app.post('/payment/portone-verify', async (req, res) => {
 
 // 자동 청구 — 운영자/스케줄러가 호출(관리자 인증 보호)
 app.post('/billing/charge', adminAuth, async (req, res) => {
-  const { customerKey, amount, orderId, orderName } = req.body || {};
-  if (!customerKey || !amount || !orderId) return res.status(400).json({ message: 'customerKey, amount, orderId가 필요합니다.' });
+  const { customerKey } = req.body || {};
+  if (!customerKey) return res.status(400).json({ message: 'customerKey가 필요합니다.' });
   const rec = billingMap[customerKey];
   if (!rec) return res.status(404).json({ message: '해당 customerKey의 빌링키가 없습니다.' });
-  try {
-    const r = await tossPost('https://api.tosspayments.com/v1/billing/' + encodeURIComponent(rec.billingKey),
-      { customerKey: customerKey, amount: amount, orderId: orderId, orderName: orderName || '심지OS 월 구독' });
-    if (!r.ok) { console.error('❌ 자동결제 실패:', customerKey, r.data.code, r.data.message); return res.status(r.status).json({ message: r.data.message || '자동결제 실패', code: r.data.code }); }
-    console.log('💳 자동결제 승인:', customerKey, (r.data.totalAmount || amount) + '원');
-    return res.json({ status: r.data.status, orderId: r.data.orderId, totalAmount: r.data.totalAmount, approvedAt: r.data.approvedAt });
-  } catch (e) { console.error('서버 오류:', e); return res.status(500).json({ message: '서버 오류: ' + e.message }); }
+  // 포트원(PortOne) 빌링키 청구로 통일 — chargeOne 재사용
+  const ok = await chargeOne(rec);
+  if (!ok) return res.status(502).json({ ok:false, message: '포트원 청구 실패(로그 확인)' });
+  return res.json({ ok:true, customerKey: customerKey, amount: rec.amount, lastCharge: rec.lastCharge });
 });
 
 // 구독자 목록 (billingKey 비노출) — 관리자 인증
@@ -408,16 +412,26 @@ app.post('/billing/cancel', (req, res) => {
 });
 // 월 자동청구 스케줄러
 async function chargeOne(rec){
+  // 매달 반복 자동청구 — 포트원(PortOne V2) 빌링키 결제. (이전: 토스페이먼츠 → 교체)
+  if (!PORTONE_SECRET) { console.error('❌ 자동결제 불가: PORTONE_API_SECRET 미설정'); return false; }
   const ym = new Date().toISOString().slice(0,7).replace('-','');
-  const orderId = 'sub_' + rec.customerKey + '_' + ym;
-  const r = await tossPost('https://api.tosspayments.com/v1/billing/' + encodeURIComponent(rec.billingKey),
-    { customerKey: rec.customerKey, amount: rec.amount, orderId: orderId, orderName: (rec.period==='year' ? '심지OS 연 구독' : '심지OS 월 구독') });
-  if (r.ok) {
-    const n = new Date(rec.nextBilling || Date.now()); if (rec.period==='year') n.setFullYear(n.getFullYear()+1); else n.setMonth(n.getMonth()+1); rec.nextBilling = n.toISOString(); rec.lastCharge = new Date().toISOString(); saveBilling();
-    try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'charge', childId: rec.customerKey, amount: rec.amount, status:'paid', ts:Date.now() })+'\n'); } catch(e){}
-    console.log('💳 자동결제 성공:', rec.customerKey, rec.amount+'원');
-  } else { console.error('❌ 자동결제 실패:', rec.customerKey, r.data.code, r.data.message); }
-  return r.ok;
+  const paymentId = 'sub' + rec.customerKey.replace(/[^a-zA-Z0-9]/g,'') + ym;
+  try {
+    const r = await fetch('https://api.portone.io/payments/' + encodeURIComponent(paymentId) + '/billing-key', {
+      method:'POST',
+      headers:{ 'Authorization':'PortOne ' + PORTONE_SECRET, 'Content-Type':'application/json' },
+      body: JSON.stringify({ billingKey: rec.billingKey, orderName:'심지OS 월 구독', amount:{ total: rec.amount }, currency:'KRW' })
+    });
+    const data = await r.json().catch(function(){ return {}; });
+    if (r.ok) {
+      const n = new Date(rec.nextBilling || Date.now()); n.setMonth(n.getMonth()+1); rec.nextBilling = n.toISOString(); rec.lastCharge = new Date().toISOString(); saveBilling();
+      try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'charge', childId: rec.customerKey, amount: rec.amount, status:'paid', ts:Date.now() })+'\n'); } catch(e){}
+      console.log('💳 자동결제 성공:', rec.customerKey, rec.amount+'원');
+      return true;
+    }
+    console.error('❌ 자동결제 실패:', rec.customerKey, (data && (data.type || data.message)) || ('HTTP '+r.status));
+    return false;
+  } catch(e){ console.error('❌ 자동결제 오류:', rec.customerKey, String(e)); return false; }
 }
 async function runBillingCycle(){
   const now = Date.now(); let n=0;
