@@ -781,6 +781,17 @@ async function showWeeklyAI(btn){
   document.getElementById('wk-ai').innerHTML='<div style="background:var(--mint-soft);border:1px solid var(--mint);border-radius:12px;padding:12px;font-size:14px;text-align:left">💬 '+esc(out)+'</div>';
 }
 async function openMonthlyReport(){
+  if(!isSubscribed()){
+    showOverlay(
+      '<div style="font-size:34px;margin-bottom:4px">🔒</div>'
+      +'<h2>월간 성장 리포트는 구독 기능이에요</h2>'
+      +'<p style="line-height:1.7">아이의 한 달을 AI가 읽어 <b>소질의 싹</b>과 <b>다음 달 한 걸음</b>을 짚어드려요. 아이의 매일 1분 활동·AI 친구·기록은 계속 무료이고, 이 <b>월간 리포트</b>는 구독하면 바로 열립니다. <b>커피 한 잔 값</b>으로 매달 함께해요.</p>'
+      +'<button class="btn btn-primary" style="width:100%;margin:8px 0 8px" onclick="location.href=\'/subscribe\'">💛 지금 구독하고 리포트 보기</button>'
+      +'<button class="btn btn-ghost" style="width:100%;margin-bottom:6px" onclick="this.closest(\'.ovl\').remove();restoreByEmail(null)">이미 구독했어요 (이메일로 확인)</button>'
+      +'<button class="btn btn-ghost" style="width:100%" onclick="this.closest(\'.ovl\').remove()">닫기</button>'
+    );
+    return;
+  }
   const s=monthStats(); const p=DB.profile(); const nm=p?p.name:'아이'; const prof=profileSummary();
   showOverlay(
     '<h2>🌿 30일 성장 리포트</h2>'
