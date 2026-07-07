@@ -355,9 +355,10 @@ app.post('/billing/portone-issue', async (req, res) => {
   if (plan === 'early' && earlyCount() >= EARLY_LIMIT) return res.status(409).json({ ok:false, message:'얼리버드 100가정이 마감되었습니다. 정가로 함께해 주세요.' });
   const amount = PORTONE_PRICE[plan];                 // 서버 정가표 강제(위·변조 방지)
   const email = (b.email || '').toString().slice(0,120);
+  const phone = (b.phone || '').toString().replace(/[^0-9]/g,'').slice(0,15);
   const customerKey = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
   const next = new Date(); next.setMonth(next.getMonth() + 1);
-  const rec = { customerKey: customerKey, billingKey: billingKey, email: email, plan: plan, amount: amount,
+  const rec = { customerKey: customerKey, billingKey: billingKey, email: email, phone: phone, plan: plan, amount: amount,
                 period:'month', status:'active', pg:'portone', issuedAt: new Date().toISOString(), nextBilling: next.toISOString() };
   billingMap[customerKey] = rec; saveBilling();
   try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'subscription', childId:customerKey, status:'active', mrr:amount, amount:amount, period:'month', plan:plan, ts:Date.now() })+'\n'); } catch(e){}
@@ -398,7 +399,7 @@ app.post('/billing/charge', adminAuth, async (req, res) => {
 
 // 구독자 목록 (billingKey 비노출) — 관리자 인증
 app.get('/billing/subscribers', adminAuth, (req, res) => {
-  const list = Object.keys(billingMap).map(function (k) { const r = billingMap[k]; return { customerKey: r.customerKey, email: r.email||'', plan: r.plan||'', amount: r.amount||0, status: r.status||'active', cardCompany: r.cardCompany, last4: r.last4, issuedAt: r.issuedAt, nextBilling: r.nextBilling||'' }; });
+  const list = Object.keys(billingMap).map(function (k) { const r = billingMap[k]; return { customerKey: r.customerKey, email: r.email||'', phone: r.phone||'', plan: r.plan||'', amount: r.amount||0, status: r.status||'active', cardCompany: r.cardCompany, last4: r.last4, issuedAt: r.issuedAt, nextBilling: r.nextBilling||'' }; });
   res.json({ count: list.length, active: list.filter(function(x){return x.status==='active';}).length, subscribers: list });
 });
 // 해지 — 다음 결제부터 중단(이미 결제한 기간은 만료까지 이용)
