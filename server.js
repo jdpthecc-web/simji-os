@@ -14,9 +14,7 @@ const crypto = require('crypto');
 const app = express();
 app.use(express.json());
 
-// 시크릿 키: 환경변수 우선, 없으면 토스 공개 테스트 키로 동작.
-// ⚠ 라이브 전환 시 반드시 환경변수 TOSS_SECRET_KEY 로 본인 키를 주입하세요. (코드에 라이브 키를 적지 마세요)
-const SECRET_KEY = process.env.TOSS_SECRET_KEY || 'test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6';
+// 결제는 포트원(PortOne V2)→KPN 경로만 사용합니다. (토스 잔재 제거)
 const DATA_DIR = fs.existsSync('/var/data') ? '/var/data' : __dirname; // 영구 디스크
 const METRICS_FILE = path.join(DATA_DIR, 'metrics.jsonl');
 const PORT = process.env.PORT || 3000;
@@ -35,55 +33,7 @@ app.get('/subscribe', (req, res) => res.sendFile(path.join(__dirname, 'subscribe
 app.get('/paytest', (req, res) => res.sendFile(path.join(__dirname, 'paytest.html')));
 app.get('/admin', adminAuth, (req, res) => res.sendFile(path.join(__dirname, 'SimjiOs_admin.html')));
 
-/**
- * 결제 승인 엔드포인트
- * 클라이언트(결제위젯)가 인증을 마치면 successUrl 로 paymentKey/orderId/amount 가 돌아오고,
- * 앱이 이 엔드포인트로 그 값을 전달합니다. 여기서 시크릿 키로 토스에 '승인' 요청을 보내야
- * 실제로 결제가 완료(DONE)됩니다.
- */
-app.post('/confirm', async (req, res) => {
-  const { paymentKey, orderId, amount } = req.body || {};
-  if (!paymentKey || !orderId || !amount) {
-    return res.status(400).json({ message: 'paymentKey, orderId, amount가 모두 필요합니다.' });
-  }
-
-  // ⚠ 운영 권장: 주문 생성 시 orderId별 결제예정금액을 서버 DB에 저장해두고,
-  //    여기서 그 금액과 amount가 일치하는지 검증한 뒤 승인하세요(금액 위변조 방지).
-
-  try {
-    const auth = Buffer.from(SECRET_KEY + ':').toString('base64');
-    const resp = await fetch('https://api.tosspayments.com/v1/payments/confirm', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + auth,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ paymentKey, orderId, amount }),
-    });
-    const raw = await resp.text();
-    let data = {};
-    try { data = raw ? JSON.parse(raw) : {}; }
-    catch (_) { data = { message: '토스 응답 파싱 실패', raw: raw.slice(0, 200) }; }
-
-    if (!resp.ok) {
-      console.error('❌ 승인 실패:', data.code, data.message);
-      return res.status(resp.status).json({ message: data.message || '승인 실패', code: data.code });
-    }
-
-    console.log('✅ 결제 승인:', data.orderId, (data.totalAmount || amount) + '원', data.method);
-    // 여기서 구독을 활성화/저장하세요 (DB insert 등)
-    return res.json({
-      status: data.status,           // 'DONE' 이면 성공
-      method: data.method,
-      approvedAt: data.approvedAt,
-      orderId: data.orderId,
-      totalAmount: data.totalAmount,
-    });
-  } catch (e) {
-    console.error('서버 오류:', e);
-    return res.status(500).json({ message: '서버 오류: ' + e.message });
-  }
-});
+/* (구) 토스 결제승인 엔드포인트 제거됨 — 현재 결제는 포트원(PortOne V2)→KPN 경로만 사용 */
 
 /**
  * 체험 피드백(지불의향 설문) 수집 — 6/20 에버랜드 등 현장 테스트용
@@ -159,11 +109,11 @@ app.get('/admin/feedback', adminAuth, (req, res) => {
 });
 
 /**
- * 런타임 설정 — Toss 클라이언트 키(라이브 전환 시 env만 변경)
+ * 런타임 설정 — 얼리버드 잔여/오픈 여부
  */
 app.get('/config', (req, res) => {
   const rem = Math.max(0, EARLY_LIMIT - earlyCount());
-  res.json({ tossClientKey: process.env.TOSS_CLIENT_KEY || 'test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm', earlyRemaining: rem, earlyOpen: rem > 0 });
+  res.json({ earlyRemaining: rem, earlyOpen: rem > 0 });
 });
 
 /**
@@ -269,13 +219,9 @@ app.post('/ai', async (req, res) => {
 });
 
 /**
- * 자동결제(빌링) — 월 구독.  ⚠ 빌링은 일반결제와 별도 계약 + 별도 키(빌링 MID)가 필요합니다.
- * 라이브 시 TOSS_BILLING_SECRET_KEY(빌링 전용 시크릿)를 환경변수로 넣으세요(없으면 SECRET_KEY 사용).
- * 흐름: (앱) requestBillingAuth → successUrl?authKey&customerKey → POST /billing/issue (빌링키 발급·저장)
- *       → 결제주기마다 POST /billing/charge (자동 청구).  ※ billingKey 조회 API는 없으니 안전 저장 필수.
+ * 자동결제(빌링) — 월 구독. 빌링키는 포트원(PortOne V2)→KPN으로 발급·청구합니다.
  * ⚠ 데모 저장(billing-keys.jsonl, 평문). 운영은 암호화 저장/DB 권장.
  */
-const BILLING_SECRET = process.env.TOSS_BILLING_SECRET_KEY || SECRET_KEY;
 const BILLING_FILE = path.join(DATA_DIR, 'billing-keys.jsonl');
 const billingMap = {}; // customerKey -> { customerKey, billingKey, cardCompany, last4, issuedAt }
 function saveBilling(){ try { fs.writeFileSync(BILLING_FILE, Object.keys(billingMap).map(function(k){return JSON.stringify(billingMap[k]);}).join('\n')+'\n'); } catch(e){ console.error('billing save error:', e); } }
@@ -289,46 +235,8 @@ try {
   }
 } catch (e) {}
 
-async function tossPost(url, body) {
-  if (typeof fetch === 'undefined') throw new Error('Node 18+ 필요(fetch 없음)');
-  const ctrl = new AbortController();
-  const timer = setTimeout(function () { ctrl.abort(); }, 70000); // 자동결제 승인 최대 60초
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Authorization': 'Basic ' + Buffer.from(BILLING_SECRET + ':').toString('base64'), 'Content-Type': 'application/json' },
-      body: JSON.stringify(body), signal: ctrl.signal,
-    });
-    const raw = await resp.text();
-    let data = {}; try { data = raw ? JSON.parse(raw) : {}; } catch (_) { data = { message: 'parse error', raw: raw.slice(0, 200) }; }
-    return { ok: resp.ok, status: resp.status, data: data };
-  } finally { clearTimeout(timer); }
-}
+/* (구) 토스 tossPost 함수와 /billing/issue 엔드포인트 제거됨 — 빌링키는 포트원 /billing/portone-issue 사용 */
 
-// 빌링키 발급 — 앱의 successUrl 리다이렉트가 호출(공개)
-app.post('/billing/issue', async (req, res) => {
-  const { authKey, customerKey } = req.body || {};
-  if (!authKey || !customerKey) return res.status(400).json({ message: 'authKey, customerKey가 필요합니다.' });
-  const planReq = (req.body || {}).plan || 'regular';
-  if ((planReq === 'early' || planReq === 'early_annual') && earlyCount() >= EARLY_LIMIT) return res.status(409).json({ message: '얼리버드 100가정이 모두 마감되었습니다. 정가로 함께해 주세요.' });
-  try {
-    const r = await tossPost('https://api.tosspayments.com/v1/billing/authorizations/issue', { authKey: authKey, customerKey: customerKey });
-    if (!r.ok) { console.error('❌ 빌링키 발급 실패:', r.data.code, r.data.message); return res.status(r.status).json({ message: r.data.message || '빌링키 발급 실패', code: r.data.code }); }
-    const card = r.data.card || {};
-    const b = req.body || {};
-    const amount = parseInt(b.amount, 10) || 9900;
-    const period = (b.period === 'year') ? 'year' : 'month';
-    const next = new Date(); if (period === 'year') next.setFullYear(next.getFullYear() + 1); else next.setMonth(next.getMonth() + 1);
-    const rec = { customerKey: customerKey, billingKey: r.data.billingKey, cardCompany: card.company || '', last4: (card.number || '').slice(-4),
-                  email: (b.email||'').slice(0,120), plan: b.plan || 'regular', amount: amount, period: period, status: 'active',
-                  issuedAt: new Date().toISOString(), nextBilling: next.toISOString() };
-    billingMap[customerKey] = rec;
-    saveBilling();
-    try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'subscription', childId: customerKey, status:'active', mrr: (period==='year'? Math.round(amount/12) : amount), amount: amount, period: period, plan: rec.plan, ts:Date.now() })+'\n'); } catch(e){}
-    console.log('🔑 빌링키 발급/저장:', customerKey, rec.cardCompany, rec.last4, rec.amount+'원/'+period);
-    return res.json({ ok: true, cardCompany: rec.cardCompany, last4: rec.last4 }); // billingKey는 클라이언트로 보내지 않음
-  } catch (e) { console.error('서버 오류:', e); return res.status(500).json({ message: '서버 오류: ' + e.message }); }
-});
 
 /** ===== 포트원(PortOne V2) 결제 — KPN 채널 ===== */
 const PORTONE_SECRET = process.env.PORTONE_API_SECRET || '';
@@ -879,8 +787,7 @@ app.post('/agents/orchestrate', adminAuth, async (req, res) => {
 
 app.listen(PORT, () => {
   console.log('────────────────────────────────────────────');
-  console.log(' SIMJI OS 결제 서버 실행 중');
+  console.log(' SIMJI OS 결제 서버 실행 중 (결제: 포트원→KPN)');
   console.log(' 브라우저에서 → http://localhost:' + PORT);
-  console.log(' 시크릿 키: ' + (process.env.TOSS_SECRET_KEY ? '(환경변수 사용)' : '테스트 키(기본값)'));
   console.log('────────────────────────────────────────────');
 });

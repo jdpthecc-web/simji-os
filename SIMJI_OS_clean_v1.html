@@ -643,6 +643,8 @@ function maybeOnboard(){
 }
 /* ---------- 2주 무료 체험 · 구독 안내 카드 ---------- */
 function trialInfo(){
+  var srv=localStorage.getItem('simji_trial_left');
+  if(srv!=null){ var left=Math.max(0,parseInt(srv,10)||0); return { dayNum: 15-left, left: left, ended: left<=0 }; }
   var k='simji_trial_start', s=localStorage.getItem(k);
   if(!s){ s=String(Date.now()); localStorage.setItem(k,s); }
   var days=Math.floor((Date.now()-parseInt(s,10))/86400000);
@@ -681,6 +683,7 @@ function finishOnboard(btn){
   if(!window._gradePick){ toast('학년을 골라줘 — 초1부터 고3까지 있어 🙂'); return; }
   if(!window._genderPick){ toast('마지막 하나 — 성별을 골라줘 (안 알려줘도 괜찮아)'); return; }
   DB.setProfile(v, window._bandPick||'elem', window._gradePick, window._genderPick); logEvent('onboard',{band:window._bandPick||'elem',grade:window._gradePick,gender:window._genderPick});
+  syncProfileToServer();
   btn.closest('.ovl').remove(); renderHome(); toast(vocative(v)+', 환영해!'); setTimeout(function(){showWelcomeCard(true);},600);
 }
 function isSubscribed(){ return localStorage.getItem('simji_subscribed')==='1'; }
@@ -723,7 +726,7 @@ function openSettings(){
     +'<p style="margin-top:12px;font-size:11px">심지OS는 의료기기가 아니며 진단·치료 목적이 아니에요.</p>'
   );
 }
-function saveSettings(btn){ const v=document.getElementById('set-name').value.trim(); const p=DB.profile()||{}; DB.setProfile(v||p.name||'', window._bandPick||p.band||'elem', window._gradePick||p.grade||'', window._genderPick||p.gender||''); window._bandPick=null; window._gradePick=null; window._genderPick=null; btn.closest('.ovl').remove(); renderHome(); toast('저장했어요'); }
+function saveSettings(btn){ const v=document.getElementById('set-name').value.trim(); const p=DB.profile()||{}; DB.setProfile(v||p.name||'', window._bandPick||p.band||'elem', window._gradePick||p.grade||'', window._genderPick||p.gender||''); window._bandPick=null; window._gradePick=null; window._genderPick=null; syncProfileToServer(); btn.closest('.ovl').remove(); renderHome(); toast('저장했어요'); }
 function resetAll(btn){
   // 보호자 게이트: 어른만 풀 수 있는 확인 (어린이 앱 표준 패턴)
   const x=4+Math.floor(Math.random()*5), y=6+Math.floor(Math.random()*4);
@@ -1175,6 +1178,79 @@ function saveDream(btn){
   const p=DB.profile(); toast('🌟 '+(p&&p.name?vocative(p.name)+', ':'')+'멋진 꿈이 담겼어');
 }
 
+/* ---------- 이메일 로그인 · 2주 체험 · 아이이름 동기화 (B 모델) ---------- */
+function getEmail(){ return localStorage.getItem('simji_email')||''; }
+function setEmail(e){ if(e) localStorage.setItem('simji_email', e); }
+function memberLogin(email, cb){
+  fetch('/member/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email})})
+    .then(function(r){return r.json();}).then(cb).catch(function(){ cb(null); });
+}
+function syncProfileToServer(){
+  var email=getEmail(); var p=DB.profile(); if(!email||!p) return;
+  fetch('/member/profile',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email:email, childName:p.name||'', childGrade:p.grade||'', childBand:p.band||''})}).catch(function(){});
+}
+function applyMember(email, d){
+  setEmail(email);
+  if(d && d.status==='active'){ localStorage.setItem('simji_subscribed','1'); }
+  else { localStorage.removeItem('simji_subscribed'); }
+  if(d && typeof d.trialDaysLeft==='number'){ localStorage.setItem('simji_trial_left', String(d.trialDaysLeft)); }
+  if(d && d.status){ localStorage.setItem('simji_status', d.status); }
+  // 서버에 저장된 아이 이름(다른 기기 동기화) → 로컬에 없을 때만 반영
+  if(d && d.childName && !DB.profile()){ DB.setProfile(d.childName, d.childBand||'elem', d.childGrade||''); }
+}
+function submitLogin(btn){
+  var el=document.getElementById('login-email'); var email=(el?el.value:'').trim().toLowerCase();
+  if(!/\S+@\S+\.\S+/.test(email)){ if(el){ el.placeholder='이메일을 정확히 입력해줘요'; el.style.borderColor='#E5484D'; } return; }
+  btn.disabled=true; btn.textContent='확인 중…';
+  memberLogin(email, function(d){
+    if(!d || !d.ok){ btn.disabled=false; btn.textContent='시작하기'; alert('연결이 잠깐 불안정해요. 잠시 후 다시 시도해 주세요.'); return; }
+    applyMember(email, d);
+    var o=btn.closest('.ovl'); if(o) o.remove();
+    if(d.status==='expired'){ showExpiredScreen(email); return; }
+    bootApp();
+  });
+}
+function showStartScreen(){
+  showOverlay(
+    '<div style="font-size:34px;margin-bottom:6px">🌱</div>'
+    +'<h2>심지OS 시작하기</h2>'
+    +'<p style="line-height:1.7">보호자 이메일로 시작해요. 처음이면 <b>2주 무료 체험</b>이 열리고, 이미 쓰던 분은 같은 이메일로 <b>어느 기기에서든</b> 이어서 쓸 수 있어요.</p>'
+    +'<input id="login-email" type="email" inputmode="email" autocomplete="email" maxlength="120" placeholder="보호자 이메일 주소">'
+    +'<button class="btn btn-primary" style="width:100%" onclick="submitLogin(this)">시작하기</button>'
+    +'<p style="margin-top:10px;font-size:11px;color:#7A8A85">구독 확인과 결제·알림 안내에 쓰이는 이메일이에요. 자녀가 만 14세 미만이면 보호자 명의로 시작해 주세요.</p>'
+  );
+}
+function showExpiredScreen(email){
+  showOverlay(
+    '<div style="font-size:34px;margin-bottom:6px">🌱</div>'
+    +'<h2>무료 체험이 끝났어요</h2>'
+    +'<p style="line-height:1.7">그동안 함께해줘서 고마워요. 아이의 기록은 <b>한 달간 안전하게 보관</b>돼요 — 지금 구독하면 그대로 이어집니다. <b>커피 한 잔 값</b>으로 매달 함께해요.</p>'
+    +'<button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="location.href=\'/subscribe\'">💛 구독하고 이어가기</button>'
+    +'<button class="btn btn-ghost" style="width:100%;font-size:12px;color:#7A8A85" onclick="switchEmail(this)">다른 이메일로 로그인</button>'
+  );
+}
+function switchEmail(btn){
+  var o=btn&&btn.closest('.ovl'); if(o) o.remove();
+  localStorage.removeItem('simji_email'); localStorage.removeItem('simji_subscribed'); localStorage.removeItem('simji_status'); localStorage.removeItem('simji_trial_left');
+  showStartScreen();
+}
+function startAuthFlow(){
+  var email=getEmail();
+  if(!email){ showStartScreen(); return; }
+  memberLogin(email, function(d){
+    if(!d || !d.ok){ bootApp(); return; }   // 서버 일시 오류 시 기존처럼 진입 허용
+    applyMember(email, d);
+    if(d.status==='expired'){ showExpiredScreen(email); return; }
+    bootApp();
+  });
+}
+function bootApp(){
+  maybeOnboard();
+  if(DB.profile()) showWelcomeCard(false);
+  checkMilestones(); checkGrowthMoments(); checkFruitMoments(); checkRunMoments(); checkYearBand();
+}
+
 /* ---------- Init ---------- */
 (function(){
   var qs=location.search;
@@ -1183,22 +1259,9 @@ function saveDream(btn){
   if(qs.indexOf('subscribed=1')>=0){ localStorage.setItem('simji_subscribed','1'); }
   if(m || qs.indexOf('subscribed=1')>=0){ try{ history.replaceState({},'',location.pathname); }catch(e){} }
 })();
-// 저장된 이메일로 서버에서 구독 재확인 — 기기 변경·앱 재설치에도 인식(활성일 때만 켬)
-(function(){
-  var email=localStorage.getItem('simji_email');
-  if(!email) return;
-  fetch('/billing/status?email='+encodeURIComponent(email)).then(function(r){return r.json();}).then(function(d){
-    if(d && d.active){ localStorage.setItem('simji_subscribed','1'); }
-  }).catch(function(){});
-})();
+// 이메일 로그인 관문 → 상태 확인 후 앱 진입 (B 모델)
 renderHome();
-maybeOnboard();
-if(DB.profile()) showWelcomeCard(false);
-checkMilestones();
-checkGrowthMoments();
-checkFruitMoments();
-checkRunMoments();
-checkYearBand();
+startAuthFlow();
 </script>
 </body>
 </html>
