@@ -1201,24 +1201,41 @@ function applyMember(email, d){
 }
 function submitLogin(btn){
   var el=document.getElementById('login-email'); var email=(el?el.value:'').trim().toLowerCase();
+  var pel=document.getElementById('login-phone'); var phone=(pel?pel.value:'').replace(/[^0-9]/g,'');
   if(!/\S+@\S+\.\S+/.test(email)){ if(el){ el.placeholder='이메일을 정확히 입력해줘요'; el.style.borderColor='#E5484D'; } return; }
+  if(phone.length<10){ if(pel){ pel.placeholder='휴대폰 번호를 정확히 (숫자만)'; pel.style.borderColor='#E5484D'; } return; }
   btn.disabled=true; btn.textContent='확인 중…';
-  memberLogin(email, function(d){
-    if(!d || !d.ok){ btn.disabled=false; btn.textContent='시작하기'; alert('연결이 잠깐 불안정해요. 잠시 후 다시 시도해 주세요.'); return; }
-    applyMember(email, d);
-    var o=btn.closest('.ovl'); if(o) o.remove();
-    if(d.status==='expired'){ showExpiredScreen(email); return; }
-    bootApp();
-  });
+  fetch('/member/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email, phone:phone})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(!d || !d.ok){ btn.disabled=false; btn.textContent='시작하기'; alert((d&&d.message)||'연결이 잠깐 불안정해요. 잠시 후 다시 시도해 주세요.'); return; }
+      applyMember(email, d);
+      var o=btn.closest('.ovl'); if(o) o.remove();
+      if(d.status==='expired'){ showExpiredScreen(email); return; }
+      bootApp();
+    }).catch(function(){ btn.disabled=false; btn.textContent='시작하기'; alert('연결이 잠깐 불안정해요. 잠시 후 다시 시도해 주세요.'); });
+}
+function findEmailPrompt(){
+  var phone=prompt('가입하신 보호자 휴대폰 번호를 입력해 주세요. (숫자만)');
+  if(!phone) return;
+  phone=phone.replace(/[^0-9]/g,'');
+  if(phone.length<10){ alert('휴대폰 번호를 정확히 입력해 주세요.'); return; }
+  fetch('/member/find-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:phone})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(!d || !d.ok){ alert((d&&d.message)||'잠시 후 다시 시도해 주세요.'); return; }
+      if(!d.found){ alert('그 번호로 가입된 이메일을 찾지 못했어요.\n번호를 확인하시거나 카카오 채널로 문의해 주세요.'); return; }
+      alert('가입하신 이메일은\n\n    '+d.hint+'\n\n입니다.\n앞부분을 참고해 로그인해 주세요.');
+    }).catch(function(){ alert('조회 중 오류가 났어요. 잠시 후 다시 시도해 주세요.'); });
 }
 function showStartScreen(){
   showOverlay(
     '<div style="font-size:34px;margin-bottom:6px">🌱</div>'
     +'<h2>심지OS 시작하기</h2>'
-    +'<p style="line-height:1.7">보호자 이메일로 시작해요. 처음이면 <b>2주 무료 체험</b>이 열리고, 이미 쓰던 분은 같은 이메일로 <b>어느 기기에서든</b> 이어서 쓸 수 있어요.</p>'
+    +'<p style="line-height:1.7">보호자 이메일과 휴대폰으로 시작해요. 처음이면 <b>2주 무료 체험</b>이 열리고, 이미 쓰던 분은 같은 이메일로 <b>어느 기기에서든</b> 이어서 쓸 수 있어요.</p>'
     +'<input id="login-email" type="email" inputmode="email" autocomplete="email" maxlength="120" placeholder="보호자 이메일 주소">'
-    +'<button class="btn btn-primary" style="width:100%" onclick="submitLogin(this)">시작하기</button>'
-    +'<p style="margin-top:10px;font-size:11px;color:#7A8A85">구독 확인과 결제·알림 안내에 쓰이는 이메일이에요. 자녀가 만 14세 미만이면 보호자 명의로 시작해 주세요.</p>'
+    +'<input id="login-phone" type="tel" inputmode="numeric" autocomplete="tel" maxlength="20" placeholder="보호자 휴대폰 (010-0000-0000)" style="margin-top:8px">'
+    +'<button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="submitLogin(this)">시작하기</button>'
+    +'<button class="btn btn-ghost" style="width:100%;font-size:12px;color:#7A8A85;margin-top:4px" onclick="findEmailPrompt()">이메일을 잊으셨나요? 휴대폰으로 찾기</button>'
+    +'<p style="margin-top:8px;font-size:11px;color:#7A8A85">구독 확인·결제·알림 안내에 쓰이는 정보예요. 자녀가 만 14세 미만이면 보호자 명의로 시작해 주세요.</p>'
   );
 }
 function showExpiredScreen(email){

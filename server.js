@@ -310,7 +310,7 @@ app.post('/billing/portone-issue', async (req, res) => {
   const rec = { customerKey: customerKey, billingKey: billingKey, email: email, phone: phone, plan: plan, amount: amount,
                 period:'month', status:'active', pg:'portone', issuedAt: new Date().toISOString(), nextBilling: next.toISOString() };
   billingMap[customerKey] = rec; saveBilling();
-  if (email) sbUpsertMember({ email: email.toLowerCase(), status:'active' }).catch(function(){});
+  if (email) sbUpsertMember({ email: email.toLowerCase(), status:'active', phone: phone||null }).catch(function(){});
   try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'subscription', childId:customerKey, status:'active', mrr:amount, amount:amount, period:'month', plan:plan, ts:Date.now() })+'\n'); } catch(e){}
   portoneCharge(rec).then(function(c){ if(c.ok){ rec.lastCharge = new Date().toISOString(); saveBilling(); } else { console.log('ℹ️ 첫 청구 보류:', c.message || (c.data && c.data.message)); } }).catch(function(){});
   console.log('🔑 [포트원] 빌키 저장:', customerKey, plan, amount + '원/월');
@@ -326,7 +326,9 @@ app.get('/billing/status', (req, res) => {
 
 // 이메일 로그인 겸 체험 시작/확인 — 앱 시작 화면이 호출(핵심)
 app.post('/member/login', async (req, res) => {
-  const email = ((req.body||{}).email || '').toString().trim().toLowerCase();
+  const b = req.body||{};
+  const email = (b.email || '').toString().trim().toLowerCase();
+  const phone = (b.phone || '').toString().replace(/[^0-9]/g,'').slice(0,15);
   if(!/\S+@\S+\.\S+/.test(email)) return res.json({ ok:false, message:'이메일 형식이 올바르지 않아요.' });
   const subscriber = isSubscriberEmail(email);
   if(!SB_ON){
@@ -334,10 +336,11 @@ app.post('/member/login', async (req, res) => {
   }
   let m = await sbGetMember(email);
   if(!m){
-    m = await sbUpsertMember({ email: email, status: subscriber?'active':'trial', trial_start: new Date().toISOString() });
+    m = await sbUpsertMember({ email: email, phone: phone||null, status: subscriber?'active':'trial', trial_start: new Date().toISOString() });
     return res.json({ ok:true, isNew:true, status: subscriber?'active':'trial', trialDaysLeft: TRIAL_DAYS,
       childName:(m&&m.child_name)||null, childGrade:(m&&m.child_grade)||null, childBand:(m&&m.child_band)||null });
   }
+  if(phone && !m.phone){ sbUpsertMember({ email:email, phone:phone }).catch(function(){}); }  // 번호 없던 회원이면 채움
   let status;
   if(subscriber || m.status==='active'){ status='active'; if(m.status!=='active') sbUpsertMember({ email:email, status:'active' }).catch(function(){}); }
   else { status = trialLeft(m.trial_start) > 0 ? 'trial' : 'expired'; }
@@ -356,6 +359,24 @@ app.post('/member/profile', async (req, res) => {
   if(b.childBand!=null)  patch.child_band  = String(b.childBand).slice(0,20);
   const m = await sbUpsertMember(patch);
   return res.json({ ok: !!(m || !SB_ON), childName:(m&&m.child_name)|| patch.child_name || null });
+});
+
+// 이메일 힌트 마스킹: abcde@gmail.com → ab****@gmail.com
+function maskEmail(e){
+  e=String(e||''); var at=e.indexOf('@'); if(at<1) return '****';
+  return e.slice(0, Math.min(2,at)) + '****' + e.slice(at);
+}
+// 휴대폰으로 가입 이메일 찾기 — 전체가 아닌 '가린 힌트'로만 반환(공개)
+app.post('/member/find-email', async (req, res) => {
+  const phone = ((req.body||{}).phone || '').toString().replace(/[^0-9]/g,'').slice(0,15);
+  if(phone.length < 10) return res.json({ ok:false, message:'휴대폰 번호를 정확히 입력해 주세요.' });
+  if(!SB_ON) return res.json({ ok:false, message:'잠시 후 다시 시도해 주세요.' });
+  try{
+    const r = await fetch(SUPABASE_URL + '/rest/v1/members?select=email,updated_at&phone=eq.' + encodeURIComponent(phone) + '&order=updated_at.desc', { headers: sbHeaders() });
+    const rows = r.ok ? await r.json() : [];
+    if(!rows || !rows.length) return res.json({ ok:true, found:false });
+    return res.json({ ok:true, found:true, hint: maskEmail(rows[0].email) });
+  }catch(e){ console.error('find-email:', String(e)); return res.json({ ok:false, message:'조회 중 오류가 났어요.' }); }
 });
 // 단건결제 검증(선택) — 프론트가 requestPayment 성공 후 호출
 app.post('/payment/portone-verify', async (req, res) => {
