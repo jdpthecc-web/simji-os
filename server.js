@@ -333,6 +333,47 @@ app.post('/billing/issue', async (req, res) => {
 /** ===== 포트원(PortOne V2) 결제 — KPN 채널 ===== */
 const PORTONE_SECRET = process.env.PORTONE_API_SECRET || '';
 const PORTONE_PRICE = { early: 5500, regular: 9900 };
+
+// ── Supabase(외부 저장소) 연결 — 회원/체험/아이이름을 영구 저장(재배포에도 안 날아감) ──
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/,'');
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
+const SB_ON = !!(SUPABASE_URL && SUPABASE_KEY);
+const TRIAL_DAYS = 14;
+console.log(SB_ON ? '🗄️  Supabase 연결됨' : '⚠️  Supabase 미설정(임시 동작)');
+function sbHeaders(extra){
+  return Object.assign({ 'apikey': SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY, 'Content-Type':'application/json' }, extra||{});
+}
+async function sbGetMember(email){
+  if(!SB_ON) return null;
+  try{
+    const r = await fetch(SUPABASE_URL + '/rest/v1/members?select=*&email=eq.' + encodeURIComponent(email), { headers: sbHeaders() });
+    if(!r.ok) return null;
+    const rows = await r.json();
+    return (rows && rows[0]) || null;
+  }catch(e){ console.error('sbGetMember:', String(e)); return null; }
+}
+async function sbUpsertMember(obj){
+  if(!SB_ON) return null;
+  try{
+    obj.updated_at = new Date().toISOString();
+    const r = await fetch(SUPABASE_URL + '/rest/v1/members', {
+      method:'POST', headers: sbHeaders({ 'Prefer':'resolution=merge-duplicates,return=representation' }), body: JSON.stringify(obj)
+    });
+    if(!r.ok){ console.error('sbUpsertMember http', r.status); return null; }
+    const rows = await r.json();
+    return (rows && rows[0]) || null;
+  }catch(e){ console.error('sbUpsertMember:', String(e)); return null; }
+}
+function isSubscriberEmail(email){
+  email = (email||'').toLowerCase();
+  return Object.keys(billingMap).some(function(k){ var r=billingMap[k]; return (r.email||'').toLowerCase()===email && r.status==='active'; });
+}
+function trialLeft(trialStart){
+  if(!trialStart) return 0;
+  var days = Math.floor((Date.now() - new Date(trialStart).getTime()) / 86400000);
+  return Math.max(0, TRIAL_DAYS - days);
+}
+
 async function portoneCharge(rec){
   if (!PORTONE_SECRET) return { ok:false, message:'PORTONE_API_SECRET 미설정(테스트 단계)' };
   const paymentId = 'sub' + rec.customerKey.replace(/[^a-zA-Z0-9]/g,'') + new Date().toISOString().slice(0,7).replace(/-/g,'');
@@ -361,6 +402,7 @@ app.post('/billing/portone-issue', async (req, res) => {
   const rec = { customerKey: customerKey, billingKey: billingKey, email: email, phone: phone, plan: plan, amount: amount,
                 period:'month', status:'active', pg:'portone', issuedAt: new Date().toISOString(), nextBilling: next.toISOString() };
   billingMap[customerKey] = rec; saveBilling();
+  if (email) sbUpsertMember({ email: email.toLowerCase(), status:'active' }).catch(function(){});
   try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'subscription', childId:customerKey, status:'active', mrr:amount, amount:amount, period:'month', plan:plan, ts:Date.now() })+'\n'); } catch(e){}
   portoneCharge(rec).then(function(c){ if(c.ok){ rec.lastCharge = new Date().toISOString(); saveBilling(); } else { console.log('ℹ️ 첫 청구 보류:', c.message || (c.data && c.data.message)); } }).catch(function(){});
   console.log('🔑 [포트원] 빌키 저장:', customerKey, plan, amount + '원/월');
@@ -372,6 +414,40 @@ app.get('/billing/status', (req, res) => {
   if (!email) return res.json({ active: false });
   const active = Object.keys(billingMap).some(function(k){ var r = billingMap[k]; return (r.email||'').toLowerCase() === email && r.status === 'active'; });
   return res.json({ active: active });
+});
+
+// 이메일 로그인 겸 체험 시작/확인 — 앱 시작 화면이 호출(핵심)
+app.post('/member/login', async (req, res) => {
+  const email = ((req.body||{}).email || '').toString().trim().toLowerCase();
+  if(!/\S+@\S+\.\S+/.test(email)) return res.json({ ok:false, message:'이메일 형식이 올바르지 않아요.' });
+  const subscriber = isSubscriberEmail(email);
+  if(!SB_ON){
+    return res.json({ ok:true, status: subscriber?'active':'trial', trialDaysLeft: TRIAL_DAYS, childName:null, note:'no-store' });
+  }
+  let m = await sbGetMember(email);
+  if(!m){
+    m = await sbUpsertMember({ email: email, status: subscriber?'active':'trial', trial_start: new Date().toISOString() });
+    return res.json({ ok:true, isNew:true, status: subscriber?'active':'trial', trialDaysLeft: TRIAL_DAYS,
+      childName:(m&&m.child_name)||null, childGrade:(m&&m.child_grade)||null, childBand:(m&&m.child_band)||null });
+  }
+  let status;
+  if(subscriber || m.status==='active'){ status='active'; if(m.status!=='active') sbUpsertMember({ email:email, status:'active' }).catch(function(){}); }
+  else { status = trialLeft(m.trial_start) > 0 ? 'trial' : 'expired'; }
+  return res.json({ ok:true, status: status, trialDaysLeft: trialLeft(m.trial_start),
+    childName: m.child_name||null, childGrade: m.child_grade||null, childBand: m.child_band||null });
+});
+
+// 아이 프로필 저장(온보딩/부모의 이름변경) — 이메일에 묶어 기기 간 동기화
+app.post('/member/profile', async (req, res) => {
+  const b = req.body || {};
+  const email = (b.email||'').toString().trim().toLowerCase();
+  if(!/\S+@\S+\.\S+/.test(email)) return res.json({ ok:false, message:'이메일이 필요해요.' });
+  const patch = { email: email };
+  if(b.childName!=null)  patch.child_name  = String(b.childName).slice(0,40);
+  if(b.childGrade!=null) patch.child_grade = String(b.childGrade).slice(0,20);
+  if(b.childBand!=null)  patch.child_band  = String(b.childBand).slice(0,20);
+  const m = await sbUpsertMember(patch);
+  return res.json({ ok: !!(m || !SB_ON), childName:(m&&m.child_name)|| patch.child_name || null });
 });
 // 단건결제 검증(선택) — 프론트가 requestPayment 성공 후 호출
 app.post('/payment/portone-verify', async (req, res) => {
