@@ -284,7 +284,7 @@ function renderHome(){
         const h=new Date().getHours();
         const nmS=STAGES.find(function(s){return s.key===next;}).name;
         let lb;
-        if(doneCount===0){ lb=(h>=5&&h<12)?'🌞 학교 가기 전 1분 — 오늘의 상태 보기':(h>=17?'🌙 하루 마무리 한 바퀴':'오늘의 루프 시작'); }
+        if(doneCount===0){ lb=(h>=5&&h<12)?'🌞 학교 가기 전 1분 — 오늘의 상태 보기':(h>=17?'🌙 하루 마무리 — 마음·읽기·실천':'오늘의 루프 시작'); }
         else { lb=(h>=17?'🌙 하루 마무리: ':'다음: ')+nmS; }
         return '<button class="btn btn-primary" style="margin-top:16px" onclick="enterStage(\''+next+'\')">'+lb+'</button>';
       })() : '<div class="card" style="margin-top:16px;text-align:center;color:var(--teal);font-weight:700">'+(tone()==='teen'?'✓ 오늘 완료 — 내일 또 보자':'🌱 오늘도 한 뼘 자랐어요 — 내일 또 만나요')+'</div>')
@@ -584,7 +584,7 @@ function renderParent(){
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:8px">📚 리딩 마라톤 · '+rlog.length+'권·편</div>'
     + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;white-space:nowrap">🏃 누적 '+rlog.reduce(function(x,e){return x+(e.pages||0);},0)+'쪽 = '+fmtDist(DB.readingMeters())+' · 완주 '+Math.floor(DB.readingMeters()/42195)+'회'+(Math.floor(DB.readingMeters()/42195)?' 🏅':'')+'</div>'+rHtml+'</div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:6px">📊 이번 주</div>'
-    + '<div style="font-size:14px;color:var(--muted);margin-bottom:10px">활동 '+ws.act+'일 · 한 바퀴 '+ws.full+'번 · 감사 '+ws.g+'개 · 읽기 '+ws.r+'권'+(ws.idxAvg!=null?' · 평균 상태 '+ws.idxAvg:'')+'</div>'
+    + '<div style="font-size:14px;color:var(--muted);margin-bottom:10px">활동 '+ws.act+'일 · 하루 완성 '+ws.full+'번 · 감사 '+ws.g+'개 · 읽기 '+ws.r+'권'+(ws.idxAvg!=null?' · 평균 상태 '+ws.idxAvg:'')+'</div>'
     + '<div id="wk-ai"><button class="btn btn-ghost" style="width:100%" onclick="showWeeklyAI(this)">💬 AI 주간 한마디 보기</button></div></div>'
     + '<div class="card" style="margin-bottom:14px">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px"><span style="font-weight:700;white-space:nowrap">🌿 성장 리포트</span><button class="btn btn-primary" style="padding:7px 14px;font-size:13px;white-space:nowrap;margin-left:auto" onclick="openMonthlyReport()">30일 보기</button></div>'
@@ -747,7 +747,7 @@ function celebrate(){
   showOverlay(
     '<div class="confetti">'+conf+'</div>'
     +'<div style="font-size:40px;margin-bottom:6px">🎉</div>'
-    +'<h2>'+(nm?nm+', ':'')+(tone()==='teen'?'오늘 한 바퀴 완료!':'오늘도 한 뼘 자랐어!')+'</h2>'
+    +'<h2>'+(nm?nm+', ':'')+(tone()==='teen'?'오늘 하루 완성!':'오늘도 한 뼘 자랐어!')+'</h2>'
     +'<p>'+(tone()==='teen'?'腦·心·智·動 — 오늘도 +1. 꾸준함이 진짜 실력이야.':'腦·心·智·動을 모두 돌았어 — 작지만 진짜 성장이야.')+'<br>🌱 함께한 날 '+DB.activeDays().length+'일</p>'
     +'<button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="this.closest(\'.ovl\').remove()">좋아!</button>'
   );
@@ -778,7 +778,7 @@ async function showWeeklyAI(btn){
   const s=weekStats(); const p=DB.profile(); const nm=p?p.name:'아이'; const prof=profileSummary();
   btn.textContent='요약 만드는 중…'; btn.disabled=true;
   const sys='너는 아동 성장 리포트 도우미. 부모에게 보내는 따뜻한 1~2문장. 평가·비교·진단 금지, 기록된 사실 기반으로 구체적으로 감사와 읽기의 꾸준함이 보이면 특히 짚어줄 것.';
-  const prompt='아이 '+nm+'의 최근 7일: 활동 '+s.act+'일, 한 바퀴 완성 '+s.full+'번, 감사 '+s.g+'개, 읽기 '+s.r+'권'+(s.idxAvg!=null?(', 평균 상태 '+s.idxAvg):'')+'. 최근 감사 예: '+prof.grats.slice(-3).join(' / ')+'. 부모에게 한마디.';
+  const prompt='아이 '+nm+'의 최근 7일: 활동 '+s.act+'일, 하루 완성 '+s.full+'번, 감사 '+s.g+'개, 읽기 '+s.r+'권'+(s.idxAvg!=null?(', 평균 상태 '+s.idxAvg):'')+'. 최근 감사 예: '+prof.grats.slice(-3).join(' / ')+'. 부모에게 한마디.';
   let _o=await aiText(sys,prompt); if(!aiKoreanOk(_o)) _o=null;
   const out=_o || (nm+'가 이번 주 '+s.act+'일을 함께했어요. 작은 꾸준함이 가장 큰 힘이에요.');
   document.getElementById('wk-ai').innerHTML='<div style="background:var(--mint-soft);border:1px solid var(--mint);border-radius:12px;padding:12px;font-size:14px;text-align:left">💬 '+esc(out)+'</div>';
@@ -798,13 +798,13 @@ async function openMonthlyReport(){
   const s=monthStats(); const p=DB.profile(); const nm=p?p.name:'아이'; const prof=profileSummary();
   showOverlay(
     '<h2>🌿 30일 성장 리포트</h2>'
-    + '<p style="text-align:left">최근 30일 — 활동 <b>'+s.act+'일</b> · 한 바퀴 완성 <b>'+s.full+'번</b><br>감사 <b>'+s.g+'개</b> · 읽기 <b>'+s.r+'권·편</b>'+(s.idxAvg!=null?('<br>평균 상태 지수 <b>'+s.idxAvg+'</b>'+(s.idxTrend?' · '+s.idxTrend:'')):'')+'</p>'
+    + '<p style="text-align:left">최근 30일 — 활동 <b>'+s.act+'일</b> · 하루 완성 <b>'+s.full+'번</b><br>감사 <b>'+s.g+'개</b> · 읽기 <b>'+s.r+'권·편</b>'+(s.idxAvg!=null?('<br>평균 상태 지수 <b>'+s.idxAvg+'</b>'+(s.idxTrend?' · '+s.idxTrend:'')):'')+'</p>'
     + '<div id="mr-ai" style="background:var(--mint-soft);border:1px solid var(--mint);border-radius:12px;padding:12px;font-size:14px;text-align:left;margin:10px 0">AI가 한 달의 기록을 읽는 중…</div>'
     + '<button class="btn btn-primary" style="width:100%" onclick="this.closest(\'.ovl\').remove()">닫기</button>'
     + '<p style="margin-top:10px;font-size:11px">기록 기반 참고용이에요. 진단이 아니에요.</p>'
   );
   const sys='너는 아동 성장 리포트 도우미. 부모에게 주는 정확히 3문장: 1) 한 달의 사실 요약 2) 기록에서 보이는 아이의 흥미·소질의 싹 한 가지(읽은 책·감사·실천의 패턴에서, 단정하지 말고 싹이 보인다는 톤으로) 3) 다음 달 함께 해볼 한 가지. 평가·비교·진단 금지, 따뜻하고 구체적으로. 감사와 읽기의 꾸준함이 보이면 특히 짚어줄 것.';
-  const prompt='아이 '+nm+'. 최근 30일: 활동 '+s.act+'일, 한 바퀴 '+s.full+'번, 감사 '+s.g+'개, 읽기 '+s.r+'권, 평균 상태 '+(s.idxAvg!=null?(s.idxAvg+(s.idxTrend?'('+s.idxTrend+')':'')):'기록 적음')+'. 최근 감사: '+(prof.grats.join(' / ')||'없음')+'. 읽은 것: '+(prof.reads.join(', ')||'없음')+'. 작은 실천: '+(prof.acts.join(', ')||'없음')+'.'+(prof.dream?(' 아이의 꿈: '+prof.dream+' — 소질의 싹과 자연스럽게 이어지면 언급.'):'');
+  const prompt='아이 '+nm+'. 최근 30일: 활동 '+s.act+'일, 하루 완성 '+s.full+'번, 감사 '+s.g+'개, 읽기 '+s.r+'권, 평균 상태 '+(s.idxAvg!=null?(s.idxAvg+(s.idxTrend?'('+s.idxTrend+')':'')):'기록 적음')+'. 최근 감사: '+(prof.grats.join(' / ')||'없음')+'. 읽은 것: '+(prof.reads.join(', ')||'없음')+'. 작은 실천: '+(prof.acts.join(', ')||'없음')+'.'+(prof.dream?(' 아이의 꿈: '+prof.dream+' — 소질의 싹과 자연스럽게 이어지면 언급.'):'');
   let _o2=await aiText(sys,prompt); if(!aiKoreanOk(_o2)) _o2=null;
   const out=_o2 || ('한 달 동안 '+s.act+'일을 함께했어요. 꾸준히 쌓인 기록이 아이의 힘이 됩니다. 다음 달에도 하루 1분이면 충분해요.');
   const el=document.getElementById('mr-ai'); if(el) el.innerHTML='💬 '+esc(out);
@@ -887,7 +887,7 @@ function checkGrowthMoments(){
   if(DB.returnedAfterBreak() && doneCnt>0 && !d.changes.firstReturn)
     moments.push(['firstReturn','🔄','다시 일어선 날','며칠 쉬었다가 스스로 돌아왔어 — 이게 바로 회복탄력성이야. 하루 빠져도 습관은 무너지지 않아.']);
   if(day.stateIndex!=null && day.stateIndex<50 && doneCnt>=4 && !d.changes.cloudyLoop)
-    moments.push(['cloudyLoop','🌈','흐린 날에도 한 바퀴','컨디션이 낮은 날에 해내는 한 바퀴가 진짜 힘이야.']);
+    moments.push(['cloudyLoop','🌈','흐린 날에도 해내기','컨디션이 낮은 날에 끝까지 해내는 하루가 진짜 힘이야.']);
   if(idxs.length>=6 && !d.changes.uptrend){
     const h=Math.floor(idxs.length/2); const avg=function(z){return z.reduce(function(x,y){return x+y.idx;},0)/z.length;};
     if(avg(idxs.slice(h))-avg(idxs.slice(0,h))>=5)
@@ -990,7 +990,7 @@ function renderMyRoom(){
   const marks=[];
   if(d.milestones){ const M={m7:'🌱 새싹',m30:'🌿 어린나무',m66:'🌳 나무',m120:'🌸 꽃',m200:'🍎 열매',m365:'🌲 큰 나무',forest:'🌳🌲🌳 숲'}; Object.keys(M).forEach(function(k){ if(d.milestones[k]) marks.push(M[k]); }); }
   if(laps) marks.push('🏅 마라톤 완주 ×'+laps);
-  if(d.changes){ const C={firstReturn:'🔄 다시 일어선 날',cloudyLoop:'🌈 흐린 날의 한 바퀴',uptrend:'📈 오르막',grat50:'🙏 감사 50'}; Object.keys(C).forEach(function(k){ if(d.changes[k]) marks.push(C[k]); }); }
+  if(d.changes){ const C={firstReturn:'🔄 다시 일어선 날',cloudyLoop:'🌈 흐린 날의 완성',uptrend:'📈 오르막',grat50:'🙏 감사 50'}; Object.keys(C).forEach(function(k){ if(d.changes[k]) marks.push(C[k]); }); }
   document.getElementById('sc-myroom').innerHTML =
     '<div class="loop-hero"><p>너만의 비밀의 방</p><h1>🗝️ '+esc(nm)+'의 방</h1>'
     + '<div class="streak">'+gs.emoji+' '+gs.name+' · 함께한 날 '+ad+'일 · 감사 '+grats.length+'개 · 책 '+reads.length+'권 · '+fmtDist(mtr)+'</div></div>'
