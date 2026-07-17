@@ -66,6 +66,13 @@ tr:last-child td{border-bottom:none}
   <h2>오케스트레이터 최근 결정</h2>
   <div id="decisions"></div>
 
+  <h2>회원 목록 (구독·체험)</h2>
+  <div class="chips" id="msum"></div>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>이메일</th><th>아이이름</th><th>학년</th><th>휴대폰</th><th>상태</th><th>체험시작</th><th>남은일</th></tr></thead>
+    <tbody id="members"></tbody>
+  </table></div>
+
   <div class="foot">이 화면의 정보는 운영·안전 확인 목적입니다. 아동 식별정보는 가명 ID만 표시되며, 외부 공유를 금합니다. 안전 신호는 진단이 아니라 사람의 확인이 필요한 알림입니다.</div>
 </div>
 
@@ -119,7 +126,27 @@ async function load(){
     render(await r.json(), false);
   }catch(e){ render(SAMPLE, true); }
 }
+function statusKo(s){ return s==='active'?'구독중':(s==='trial'?'체험중':(s==='expired'?'만료':s)); }
+function statusColor(s){ return s==='active'?'#2F9E83':(s==='trial'?'#BA7517':'#B04632'); }
+async function loadMembers(){
+  try{
+    const r = await fetch('/admin/members.json', { cache:'no-store' });
+    const d = await r.json();
+    if(!d || !d.configured){ document.getElementById('members').innerHTML='<tr><td colspan="7" style="color:var(--muted)">Supabase 미연결</td></tr>'; return; }
+    const s = d.summary||{};
+    document.getElementById('msum').innerHTML =
+      '<div class="chip">전체 <b>'+(s.total||0)+'</b></div>'
+      + '<div class="chip">구독중 <b>'+(s.active||0)+'</b></div>'
+      + '<div class="chip">체험중 <b>'+(s.trial||0)+'</b></div>'
+      + '<div class="chip">만료 <b>'+(s.expired||0)+'</b></div>';
+    const ms = d.members||[];
+    document.getElementById('members').innerHTML = ms.length
+      ? ms.map(function(m){ return '<tr><td><b>'+esc(m.email)+'</b></td><td>'+esc(m.childName||'-')+'</td><td>'+esc(m.childGrade||'-')+'</td><td>'+esc(m.phone||'-')+'</td><td><b style="color:'+statusColor(m.status)+'">'+statusKo(m.status)+'</b></td><td>'+esc(m.trialStart||'-')+'</td><td>'+(m.status==='trial'?(m.trialLeft+'일'):'-')+'</td></tr>'; }).join('')
+      : '<tr><td colspan="7" style="color:var(--muted)">아직 회원이 없습니다.</td></tr>';
+  }catch(e){ document.getElementById('members').innerHTML='<tr><td colspan="7" style="color:var(--muted)">불러오기 실패</td></tr>'; }
+}
 load();
+loadMembers();
 </script>
 </body>
 </html>

@@ -815,6 +815,28 @@ function buildDashboardData() {
   return { today: today, totalKids: kidList.length, todayActive: kidList.filter(function (k) { return k.todayCnt > 0; }).length, todayEvents: todayEvents, safetyToday: safetyToday, safetyTotal: safetyTotal, typeCount: typeCount, kids: kidList, decisions: decisions };
 }
 app.get('/admin/dashboard.json', adminAuth, (req, res) => res.json(buildDashboardData()));
+
+// 회원 목록(구독·체험) — Supabase members 표에서 조회
+app.get('/admin/members.json', adminAuth, async (req, res) => {
+  if (!SB_ON) return res.json({ ok:false, configured:false, members:[] });
+  try {
+    const r = await fetch(SUPABASE_URL + '/rest/v1/members?select=*&order=created_at.desc', { headers: sbHeaders() });
+    const rows = r.ok ? await r.json() : [];
+    const list = (rows || []).map(function (m) {
+      const sub = isSubscriberEmail(m.email) || m.status === 'active';
+      const left = trialLeft(m.trial_start);
+      const status = sub ? 'active' : (left > 0 ? 'trial' : 'expired');
+      return { email: m.email, childName: m.child_name || '', childGrade: m.child_grade || '', phone: m.phone || '', status: status, trialStart: (m.trial_start || '').slice(0, 10), trialLeft: left };
+    });
+    const summary = {
+      total: list.length,
+      active: list.filter(function (x) { return x.status === 'active'; }).length,
+      trial: list.filter(function (x) { return x.status === 'trial'; }).length,
+      expired: list.filter(function (x) { return x.status === 'expired'; }).length
+    };
+    return res.json({ ok:true, configured:true, summary: summary, members: list });
+  } catch (e) { return res.json({ ok:false, error: String(e), members: [] }); }
+});
 app.get('/admin/dashboard', adminAuth, (req, res) => res.sendFile(path.join(__dirname, 'SimjiOs_admin.html')));
 
 app.post('/agents/orchestrate', adminAuth, async (req, res) => {
