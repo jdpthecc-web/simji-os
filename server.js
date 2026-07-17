@@ -518,17 +518,36 @@ async function solapiSendAlimtalk(to, variables) {
   } catch (e) { return { ok: false, configured: true, error: String(e) }; }
 }
 app.get('/notify/status', (req, res) => res.json({ configured: kakaoConfigured() }));
-app.post('/notify/gratitude', async (req, res) => {
-  const b = req.body || {};
-  const childName = b.childName || '우리 아이';
-  const starter = b.starter || '오늘 아이와 1분 이야기해 보세요.';
-  if (!kakaoConfigured()) return res.json({ ok: false, configured: false, message: '카카오 알림톡 미설정 — 앱 내 초안/복사 사용' });
-  if (!NOTIFY_TEST_TO) return res.json({ ok: false, configured: true, message: '수신번호(NOTIFY_TEST_TO) 미설정' });
-  const variables = { '#{자녀명}': childName, '#{대화제안}': starter };
+// [테스트] 브라우저로 접속 → 미리 등록한 NOTIFY_TEST_TO(본인 번호)로 샘플 알림톡 1건 발송
+app.get('/notify/test', async (req, res) => {
+  if (!kakaoConfigured()) return res.json({ ok:false, configured:false, message:'카카오 알림톡 미설정 — Render 환경변수(SOLAPI/KAKAO)를 확인하세요' });
+  if (!NOTIFY_TEST_TO) return res.json({ ok:false, configured:true, message:'NOTIFY_TEST_TO(테스트 수신번호) 미설정 — Render에 본인 휴대폰 번호를 추가하세요' });
+  const variables = { '#{아이이름}': '민준', '#{오늘기록}': '오늘 친구랑 화해해서 마음이 편했어요.' };
   const out = await solapiSendAlimtalk(NOTIFY_TEST_TO, variables);
-  try { agentLog({ agent:'parent_comm', provider: aiProvider(), action: (out&&out.ok)?'sent_alimtalk':'generated', output: String(starter).slice(0,300) }); } catch(e){}
   res.json(out);
 });
+
+// [실제] 아이가 마음 한 줄을 남기면 앱이 호출 → 활성 구독자 보호자에게만 알림톡
+app.post('/notify/record', async (req, res) => {
+  const b = req.body || {};
+  const email = (b.email || '').toString().trim().toLowerCase();
+  const record = (b.record || '').toString().replace(/\s+/g, ' ').trim().slice(0, 180);
+  if (!kakaoConfigured()) return res.json({ ok:false, configured:false });
+  if (!/\S+@\S+\.\S+/.test(email)) return res.json({ ok:false, message:'이메일이 필요해요' });
+  const subscriber = isSubscriberEmail(email);
+  const m = await sbGetMember(email);
+  const active = subscriber || (m && m.status === 'active');
+  if (!active) return res.json({ ok:false, message:'구독자 전용 기능입니다' });   // 알림톡은 구독 기능
+  const phone = (m && m.phone) || '';
+  if (!phone) return res.json({ ok:false, message:'보호자 수신 번호가 없어요' });
+  const childName = (b.childName || (m && m.child_name) || '우리 아이');
+  const variables = { '#{아이이름}': childName, '#{오늘기록}': record || '오늘의 기록을 남겼어요.' };
+  const out = await solapiSendAlimtalk(phone, variables);
+  try { agentLog({ agent:'parent_comm', provider: aiProvider(), action: (out&&out.ok)?'sent_alimtalk':'failed', output: String(record).slice(0,200) }); } catch(e){}
+  res.json(out);
+});
+
+// [관리자] 임의 번호로 알림톡 발송 테스트
 app.post('/notify/kakao', adminAuth, async (req, res) => {
   const b = req.body || {};
   if (!b.to) return res.status(400).json({ message: 'to required' });
@@ -539,7 +558,7 @@ app.post('/notify/kakao', adminAuth, async (req, res) => {
 /** ===== 홈페이지 AI 도우미 (심지OS 안내) ===== */
 const SIMJI_FAQ = `
 [심지OS란]
-심지OS는 아이가 하루 1분, 뇌(腦)·마음(心)·지혜(智)·실천(動) 네 영역으로 마음과 습관을 키우는 성장 앱입니다. AI 친구와 함께 오늘의 마음을 살피고, 짧은 읽기와 작은 실천을 기록합니다. 주소는 simjios.com 입니다.
+심지OS는 아이가 하루 짧은 시간, 뇌(腦)·마음(心)·지혜(智)·실천(動) 네 영역으로 마음과 습관을 키우는 성장 앱입니다. AI 친구와 함께 오늘의 마음을 살피고, 짧은 읽기(리딩마라톤)와 작은 실천을 기록합니다. 주소는 simjios.com 입니다.
 
 [요금]
 - 얼리버드(선착 100가정): 월 5,500원
@@ -548,7 +567,7 @@ const SIMJI_FAQ = `
 구독은 simjios.com/subscribe 에서 안내합니다. 카드를 한 번 등록하면 매달 자동 결제되고, 언제든 해지할 수 있습니다.
 
 [무료 체험과 구독]
-가입하면 2주 동안 모든 기능을 무료로 체험할 수 있어요. 2주가 지나도 아이의 핵심 활동(매일 1분 루프·AI 친구·기록)은 계속 무료로 사용할 수 있습니다. 구독하시면 부모를 위한 기능 — 카카오 알림톡(아침·방과후·대화 한마디 도착)과 월간 성장 리포트(PDF) 등 —을 이어서 이용하실 수 있어요(일부 기능은 순차적으로 제공됩니다). 앞으로 클라우드 백업·동기화, 여러 자녀 관리 등도 구독 혜택으로 추가될 예정입니다.
+가입하면 2주 동안 모든 기능을 무료로 체험할 수 있어요. 2주 무료 체험이 끝나면 구독으로 이어집니다(2주 안에 구독하지 않으면 이어서 사용할 수 없어요). 아이의 기록은 체험·구독 종료 후에도 한 달간 안전하게 보관되어, 그 안에 구독하시면 그대로 이어집니다. 구독하시면 카카오 알림톡(아이의 오늘 기록 도착)과 월간 성장 리포트 등 부모를 위한 기능도 이용하실 수 있어요. 형제 통합(구독 하나로 여러 자녀·둘째부터 10% 할인)은 곧 제공됩니다.
 
 [환불]
 이용권·환불에 대한 자세한 안내는 simjios.com/refund.html 페이지를 참고해 주세요.
