@@ -416,6 +416,16 @@ app.post('/billing/cancel', adminAuth, (req, res) => {
   try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'subscription', childId: customerKey, status:'canceled', ts:Date.now() })+'\n'); } catch(e){}
   return res.json({ ok: true });
 });
+// 구독 재활성(해지 취소) — 관리자 전용
+app.post('/billing/reactivate', adminAuth, async (req, res) => {
+  const { customerKey } = req.body || {};
+  const rec = billingMap[customerKey];
+  if (!rec) return res.status(404).json({ message: '구독 정보를 찾을 수 없습니다.' });
+  rec.status = 'active'; delete rec.canceledAt; saveBilling();
+  if (rec.email) sbUpsertMember({ email: String(rec.email).toLowerCase(), status:'active', phone: rec.phone||null }).catch(function(){});
+  try { fs.appendFileSync(METRICS_FILE, JSON.stringify({ type:'subscription', childId: customerKey, status:'active', ts:Date.now() })+'\n'); } catch(e){}
+  return res.json({ ok: true });
+});
 // 월 자동청구 스케줄러
 async function chargeOne(rec){
   // 매달 반복 자동청구 — 포트원(PortOne V2) 빌링키 결제. (이전: 토스페이먼츠 → 교체)

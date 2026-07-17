@@ -164,7 +164,7 @@ async function loadSubs(){
     document.getElementById('subs').innerHTML = subs.length
       ? subs.map(function(s){
           var canceled = s.status!=='active';
-          var btn = canceled ? '<span style="color:var(--muted)">해지됨</span>'
+          var btn = canceled ? '<button onclick="reactivateSub(\''+esc(s.customerKey)+'\')" style="background:#2F9E83;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer">재활성</button>'
             : '<button onclick="cancelSub(\''+esc(s.customerKey)+'\')" style="background:#B04632;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer">해지</button>';
           return '<tr><td><b>'+esc(s.email||'-')+'</b></td><td>'+esc(s.phone||'-')+'</td><td>'+esc(s.plan||'-')+'</td><td>'+((s.amount||0).toLocaleString())+'원</td><td>'+esc(s.cardCompany||'')+' '+esc(s.last4||'')+'</td><td>'+esc((s.nextBilling||'').slice(0,10)||'-')+'</td><td><b style="color:'+(canceled?'#B04632':'#2F9E83')+'">'+(canceled?'해지':'활성')+'</b></td><td>'+btn+'</td></tr>';
         }).join('')
@@ -179,6 +179,15 @@ async function cancelSub(ck){
     if(d && d.ok){ alert('해지되었습니다. 다음 달부터 자동결제가 되지 않습니다.'); loadSubs(); loadMembers(); }
     else alert('해지 실패: '+((d&&d.message)||'오류'));
   }catch(e){ alert('해지 요청 실패'); }
+}
+async function reactivateSub(ck){
+  if(!confirm('이 구독을 다시 활성화할까요?\n\n다음 결제일에 자동결제가 재개됩니다.')) return;
+  try{
+    const r = await fetch('/billing/reactivate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({customerKey:ck}) });
+    const d = await r.json();
+    if(d && d.ok){ alert('다시 활성화되었습니다.'); loadSubs(); loadMembers(); }
+    else alert('재활성 실패: '+((d&&d.message)||'오류'));
+  }catch(e){ alert('재활성 요청 실패'); }
 }
 loadSubs();
 </script>
