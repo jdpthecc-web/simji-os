@@ -430,6 +430,19 @@ function heartScale(field,label,arr){
 function pickHeart(field,val,el){ _heart[field]=val; el.parentNode.querySelectorAll('button').forEach(function(b){b.classList.remove('sel');}); el.classList.add('sel'); }
 // 투명한 규칙 기반 비임상 웰빙 지수 (기분 0.4 + 편안함 0.3 + 곁에 누군가 0.3)
 function computeHeartIndex(h){ const m=(h.mood||3)/5,c=(h.calm||3)/5,k=(h.connect||3)/5; return Math.round((m*0.4+c*0.3+k*0.3)*100); }
+// 저녁 마음 한 줄 저장 시 보호자에게 알림톡(하루 1회·구독자만; 서버가 구독상태 재확인)
+function notifyRecord(recordText){
+  try{
+    if(localStorage.getItem('simji_subscribed')!=='1') return;
+    var email=getEmail(); if(!email) return;
+    var today=new Date().toISOString().slice(0,10);
+    if(localStorage.getItem('simji_notify_day')===today) return;
+    var p=DB.profile()||{}; var name=p.name||'우리 아이';
+    localStorage.setItem('simji_notify_day', today);   // 먼저 표시해 중복 발송 방지
+    fetch('/notify/record',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:email, childName:name, record:(recordText||'').slice(0,180)})}).catch(function(){});
+  }catch(e){}
+}
 async function submitHeart(){
   if(!_heart.mood||!_heart.calm||!_heart.connect){ toast('마음 신호 세 가지를 골라주세요'); return; }
   const grats=['grat1','grat2','grat3'].map(function(id){ return (document.getElementById(id).value||'').trim(); }).filter(Boolean);
@@ -458,6 +471,7 @@ async function submitHeart(){
   DB.addGratitudes(grats);
   DB.addParentMessage({starter:parentLine,grat:grat,wb:wb});
   logEvent('gratitude',{wb:wb,count:grats.length,mood:_heart.mood,calm:_heart.calm,conn:_heart.connect,hasFeel:feel?1:0});
+  notifyRecord(feel || grat || '');
   box.innerHTML='<div class="coach"><div class="label">마음 연결</div><div class="interp">'+esc(childLine)+'</div><div class="step">💌 부모님 화면에는 오늘의 대화 한마디를 살짝 보내뒀어</div></div><button class="btn btn-primary" style="margin-top:14px" onclick="completeStage(\'heart\',{heartIndex:'+wb+'})">다음: 읽기·질문 →</button>';
   btn.style.display='none';
 }
