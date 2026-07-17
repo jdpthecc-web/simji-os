@@ -408,7 +408,7 @@ app.get('/billing/subscribers', adminAuth, (req, res) => {
   res.json({ count: list.length, active: list.filter(function(x){return x.status==='active';}).length, subscribers: list });
 });
 // 해지 — 다음 결제부터 중단(이미 결제한 기간은 만료까지 이용)
-app.post('/billing/cancel', (req, res) => {
+app.post('/billing/cancel', adminAuth, (req, res) => {
   const { customerKey } = req.body || {};
   const rec = billingMap[customerKey];
   if (!rec) return res.status(404).json({ message: '구독 정보를 찾을 수 없습니다.' });

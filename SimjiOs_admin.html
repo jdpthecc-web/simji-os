@@ -73,6 +73,13 @@ tr:last-child td{border-bottom:none}
     <tbody id="members"></tbody>
   </table></div>
 
+  <h2>결제 구독자 (실결제)</h2>
+  <div class="chips" id="bsum"></div>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>이메일</th><th>휴대폰</th><th>플랜</th><th>금액</th><th>카드</th><th>다음결제</th><th>상태</th><th>관리</th></tr></thead>
+    <tbody id="subs"></tbody>
+  </table></div>
+
   <div class="foot">이 화면의 정보는 운영·안전 확인 목적입니다. 아동 식별정보는 가명 ID만 표시되며, 외부 공유를 금합니다. 안전 신호는 진단이 아니라 사람의 확인이 필요한 알림입니다.</div>
 </div>
 
@@ -147,6 +154,33 @@ async function loadMembers(){
 }
 load();
 loadMembers();
+async function loadSubs(){
+  try{
+    const r = await fetch('/billing/subscribers', { cache:'no-store' });
+    const d = await r.json();
+    const subs = d.subscribers||[];
+    document.getElementById('bsum').innerHTML =
+      '<div class="chip">전체 <b>'+(d.count||0)+'</b></div><div class="chip">활성 <b>'+(d.active||0)+'</b></div>';
+    document.getElementById('subs').innerHTML = subs.length
+      ? subs.map(function(s){
+          var canceled = s.status!=='active';
+          var btn = canceled ? '<span style="color:var(--muted)">해지됨</span>'
+            : '<button onclick="cancelSub(\''+esc(s.customerKey)+'\')" style="background:#B04632;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer">해지</button>';
+          return '<tr><td><b>'+esc(s.email||'-')+'</b></td><td>'+esc(s.phone||'-')+'</td><td>'+esc(s.plan||'-')+'</td><td>'+((s.amount||0).toLocaleString())+'원</td><td>'+esc(s.cardCompany||'')+' '+esc(s.last4||'')+'</td><td>'+esc((s.nextBilling||'').slice(0,10)||'-')+'</td><td><b style="color:'+(canceled?'#B04632':'#2F9E83')+'">'+(canceled?'해지':'활성')+'</b></td><td>'+btn+'</td></tr>';
+        }).join('')
+      : '<tr><td colspan="8" style="color:var(--muted)">아직 결제 구독자가 없습니다.</td></tr>';
+  }catch(e){ document.getElementById('subs').innerHTML='<tr><td colspan="8" style="color:var(--muted)">불러오기 실패</td></tr>'; }
+}
+async function cancelSub(ck){
+  if(!confirm('이 구독의 자동결제를 해지할까요?\n\n※ 이미 결제된 금액의 환불은 포트원 콘솔에서 별도로 처리해야 합니다.')) return;
+  try{
+    const r = await fetch('/billing/cancel', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({customerKey:ck}) });
+    const d = await r.json();
+    if(d && d.ok){ alert('해지되었습니다. 다음 달부터 자동결제가 되지 않습니다.'); loadSubs(); loadMembers(); }
+    else alert('해지 실패: '+((d&&d.message)||'오류'));
+  }catch(e){ alert('해지 요청 실패'); }
+}
+loadSubs();
 </script>
 </body>
 </html>
