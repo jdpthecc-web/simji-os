@@ -672,14 +672,14 @@ function showWelcomeCard(force){
   if(force){
     // 첫날 환영(온보딩 직후 1회)
     head='환영해요! 🌱';
-    sub='매일 1분, 아이의 마음·읽기·실천을 함께 돌아요. 아이의 <b>매일 1분 활동·AI 친구·기록</b>은 계속 무료예요. 카카오 알림톡과 <b>월간 성장 리포트</b> 등 부모 기능은 지금 구독하면 바로 이어집니다.';
+    sub='아침엔 1분, 저녁엔 잠깐. 아이의 마음·읽기·실천을 매일 함께 돌아요. <b>2주 무료 체험</b> 후에는 구독으로 이어져요. 구독하면 아이의 매일 활동은 물론, 카카오 알림톡과 <b>월간 성장 리포트</b> 같은 부모 기능도 함께 이용할 수 있어요.';
   } else {
     // 재방문: 며칠에 한 번만 조용히 안내(하루 한 번). 그 외 날은 조용.
     var showToday = (ti.left===7) || (ti.left<=3);
     if(!showToday) return;
     if(localStorage.getItem('simji_wcard_day')===today) return;  // 같은 날 중복 방지
     head='부모 기능으로 더 깊이 💛';
-    sub='아이의 매일 1분 활동은 계속 무료예요. 카카오 알림톡·<b>월간 성장 리포트</b> 등 부모 기능을 함께 쓰고 싶다면 지금 구독해보세요. <b>커피 한 잔 값</b>으로 매달 함께해요.';
+    sub='2주 무료 체험이 끝나면 구독으로 이어져요. 구독하면 아이의 매일 활동과 함께 카카오 알림톡·<b>월간 성장 리포트</b> 같은 부모 기능도 이용할 수 있어요. <b>커피 한 잔 값</b>으로 매달 함께해요.';
   }
   localStorage.setItem('simji_wcard_day', today);
   showOverlay(
@@ -730,7 +730,7 @@ function openSettings(){
       ? '<div style="width:100%;margin-bottom:8px;padding:13px;border-radius:14px;background:#E6F4EF;color:#16324F;font-weight:700;text-align:center">💛 구독 중이에요 · 함께해 주셔서 고맙습니다</div>'
         +'<button class="btn btn-ghost" style="width:100%;margin-bottom:12px;font-size:13px;color:#7A8A85" onclick="cancelSub()">구독 해지 문의</button>'
       : '<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="location.href=\'/subscribe\'">💛 심지OS와 계속 함께하기 (구독)</button>'
-        +'<div style="font-size:12px;color:#7A8A85;line-height:1.6;margin:2px 2px 12px">아이의 매일 1분 활동·AI 친구·기록은 계속 무료예요. 카카오 알림톡과 월간 성장 리포트 등 부모 기능은 지금 구독하면 바로 이용할 수 있어요.</div>'
+        +'<div style="font-size:12px;color:#7A8A85;line-height:1.6;margin:2px 2px 12px">2주 무료 체험 후에는 구독으로 이어져요. 구독하면 아이의 매일 활동과 함께 카카오 알림톡·월간 성장 리포트 등 부모 기능을 이용할 수 있어요.</div>'
         +'<button class="btn btn-ghost" style="width:100%;margin-bottom:12px;font-size:12px;color:#7A8A85" onclick="restoreByEmail(this)">이미 구독했어요 (이메일로 확인)</button>')
     +'<button class="btn" style="width:100%;margin-bottom:10px;background:#FEE500;color:#3C1E1E;font-weight:700;border:0" onclick="window.open(\'http://pf.kakao.com/_hxaxbnX\',\'_blank\')">💬 카카오톡 채널로 문의</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="exportData()">💾 기록 백업하기 (파일 저장)</button>'
@@ -802,7 +802,7 @@ async function openMonthlyReport(){
     showOverlay(
       '<div style="font-size:34px;margin-bottom:4px">🔒</div>'
       +'<h2>월간 성장 리포트는 구독 기능이에요</h2>'
-      +'<p style="line-height:1.7">아이의 한 달을 AI가 읽어 <b>소질의 싹</b>과 <b>다음 달 한 걸음</b>을 짚어드려요. 아이의 매일 1분 활동·AI 친구·기록은 계속 무료이고, 이 <b>월간 리포트</b>는 구독하면 바로 열립니다. <b>커피 한 잔 값</b>으로 매달 함께해요.</p>'
+      +'<p style="line-height:1.7">아이의 한 달을 AI가 읽어 <b>소질의 싹</b>과 <b>다음 달 한 걸음</b>을 짚어드려요. 2주 무료 체험 후 구독하면 이 <b>월간 리포트</b>를 매달 받아볼 수 있어요. <b>커피 한 잔 값</b>으로 매달 함께해요.</p>'
       +'<button class="btn btn-primary" style="width:100%;margin:8px 0 8px" onclick="location.href=\'/subscribe\'">💛 지금 구독하고 리포트 보기</button>'
       +'<button class="btn btn-ghost" style="width:100%;margin-bottom:6px" onclick="this.closest(\'.ovl\').remove();restoreByEmail(null)">이미 구독했어요 (이메일로 확인)</button>'
       +'<button class="btn btn-ghost" style="width:100%" onclick="this.closest(\'.ovl\').remove()">닫기</button>'
@@ -820,7 +820,7 @@ async function openMonthlyReport(){
   const sys='너는 아동 성장 리포트 도우미. 부모에게 주는 정확히 3문장: 1) 한 달의 사실 요약 2) 기록에서 보이는 아이의 흥미·소질의 싹 한 가지(읽은 책·감사·실천의 패턴에서, 단정하지 말고 싹이 보인다는 톤으로) 3) 다음 달 함께 해볼 한 가지. 평가·비교·진단 금지, 따뜻하고 구체적으로. 감사와 읽기의 꾸준함이 보이면 특히 짚어줄 것.';
   const prompt='아이 '+nm+'. 최근 30일: 활동 '+s.act+'일, 하루 완성 '+s.full+'번, 감사 '+s.g+'개, 읽기 '+s.r+'권, 평균 상태 '+(s.idxAvg!=null?(s.idxAvg+(s.idxTrend?'('+s.idxTrend+')':'')):'기록 적음')+'. 최근 감사: '+(prof.grats.join(' / ')||'없음')+'. 읽은 것: '+(prof.reads.join(', ')||'없음')+'. 작은 실천: '+(prof.acts.join(', ')||'없음')+'.'+(prof.dream?(' 아이의 꿈: '+prof.dream+' — 소질의 싹과 자연스럽게 이어지면 언급.'):'');
   let _o2=await aiText(sys,prompt); if(!aiKoreanOk(_o2)) _o2=null;
-  const out=_o2 || ('한 달 동안 '+s.act+'일을 함께했어요. 꾸준히 쌓인 기록이 아이의 힘이 됩니다. 다음 달에도 하루 1분이면 충분해요.');
+  const out=_o2 || ('한 달 동안 '+s.act+'일을 함께했어요. 꾸준히 쌓인 기록이 아이의 힘이 됩니다. 다음 달에도 짧은 시간이면 충분해요.');
   const el=document.getElementById('mr-ai'); if(el) el.innerHTML='💬 '+esc(out);
 }
 /* ---------- 마일스톤: 7일·30일·66일 ---------- */
