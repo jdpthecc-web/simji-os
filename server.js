@@ -75,6 +75,83 @@ function adminAuth(req, res, next) {
   return res.status(401).send('인증이 필요합니다. (관리자 전용)');
 }
 
+/* 이탈·휴식 이유 집계 — /admin/churn (관리자 전용)
+   앱이 보낸 churn_reason(체험 만료 시), gap_reason(오래 쉰 뒤 복귀 시)을 모아 보여준다. */
+app.get('/admin/churn', adminAuth, (req, res) => {
+  let rows = [];
+  try {
+    const raw = fs.existsSync(METRICS_FILE) ? fs.readFileSync(METRICS_FILE, 'utf8') : '';
+    rows = raw.split('\n').filter(Boolean)
+      .map(l => { try { return JSON.parse(l); } catch (e) { return null; } })
+      .filter(Boolean)
+      .filter(r => r.type === 'churn_reason' || r.type === 'gap_reason');
+  } catch (e) {}
+
+  const LABEL = {
+    busy:'바빠서 시간이 안 남', forget:'그냥 잊어버림', hard:'아이에게 어려움(문장 쓰기 등)',
+    boring:'아이가 흥미를 잃음', device:'기기 사용이 불편', price:'가격 부담',
+    nochange:'변화를 못 느낌', notused:'아이가 잘 쓰지 않음', other:'다른 이유'
+  };
+  const churn  = rows.filter(r => r.type === 'churn_reason' && r.at !== 'cancel');
+  const cancel = rows.filter(r => r.type === 'churn_reason' && r.at === 'cancel');
+  const gap    = rows.filter(r => r.type === 'gap_reason');
+
+  const tally = (list) => {
+    const m = {};
+    list.forEach(r => { const k = LABEL[r.reason] || r.reason || '(무응답)'; m[k] = (m[k] || 0) + 1; });
+    return m;
+  };
+  const bars = (m, total) => {
+    const keys = Object.keys(m).sort((a,b) => m[b] - m[a]);
+    if (!keys.length) return '<div style="color:#94A3B8;font-size:14px;padding:8px 0">아직 응답이 없습니다.</div>';
+    return keys.map(k => {
+      const w = total ? Math.round(m[k] / total * 100) : 0;
+      return `<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${k}</span><span>${m[k]}건 (${w}%)</span></div><div style="background:#E2E8F0;border-radius:4px;height:8px"><div style="width:${w}%;height:8px;background:#B04632;border-radius:4px"></div></div></div>`;
+    }).join('');
+  };
+
+  const avgGap = gap.length ? Math.round(gap.reduce((a,r) => a + (r.gapDays || 0), 0) / gap.length) : 0;
+  const recent = rows.slice(-30).reverse().map(r => {
+    const when = r.ts ? new Date(r.ts).toISOString().slice(0,10) : '';
+    const kind = r.type === 'gap_reason' ? '아이이탈' : (r.at === 'cancel' ? '구독해지' : '체험만료');
+    const extra = r.gapDays ? ` · ${r.gapDays}일 쉼` : '';
+    return `<div style="font-size:13px;padding:7px 0;border-bottom:1px dashed #E2E8F0"><b>${kind}</b> · ${LABEL[r.reason] || r.reason}${extra} <span style="color:#94A3B8">${when}</span></div>`;
+  }).join('') || '<div style="color:#94A3B8;font-size:14px;padding:8px 0">기록 없음</div>';
+
+  res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>심지OS · 이탈 이유</title>
+<style>body{font-family:'Malgun Gothic',sans-serif;max-width:720px;margin:0 auto;padding:24px 18px;color:#16324F;background:#F8FAFC}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:26px 0 8px;color:#2F9E83}
+.card{background:#fff;border-radius:12px;padding:16px;margin-bottom:14px;border:1px solid #E2E8F0}
+.big{font-size:30px;font-weight:800}.sub{font-size:13px;color:#64748B}</style></head><body>
+<h1>이탈 이유 수집</h1>
+<div class="sub">떠나기 직전(체험 만료)과 돌아온 직후(오래 쉰 뒤)에 받은 응답입니다.</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="big">${rows.length}건</div>
+  <div class="sub">전체 응답 · <b>구독해지 ${cancel.length}건</b> · 체험만료 ${churn.length}건 · 아이 이탈 ${gap.length}건${gap.length ? ` · 평균 ${avgGap}일 쉼` : ''}</div>
+</div>
+
+<h2>💰 구독 해지 (가장 중요)</h2>
+<div class="card">${bars(tally(cancel), cancel.length)}<div style="font-size:12px;color:#94A3B8;margin-top:10px">돈을 내던 가정이 떠난 이유입니다. 여기 나온 것부터 고치세요.</div></div>
+
+<h2>체험 만료 (구독까지 가지 않은 이유)</h2>
+<div class="card">${bars(tally(churn), churn.length)}</div>
+
+<h2>아이가 오래 쉼 (해지 예고 신호)</h2>
+<div class="card">${bars(tally(gap), gap.length)}</div>
+
+<h2>최근 응답 30건</h2>
+<div class="card">${recent}</div>
+
+<div class="sub" style="margin-top:18px;line-height:1.7">
+※ 응답이 적을 때 비율은 참고만 하세요. 10건 이상 쌓인 뒤 판단하는 것이 안전합니다.<br>
+※ 가장 많은 이유 <b>한 가지</b>만 골라 다음 개선에 반영하세요.
+</div>
+</body></html>`);
+});
+
 app.get('/admin/feedback', adminAuth, (req, res) => {
   let rows = [];
   try {

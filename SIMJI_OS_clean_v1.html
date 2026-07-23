@@ -241,6 +241,51 @@ function doAddChild(){
   goHome(); maybeOnboard();
 }
 
+/* ---------- 쉬었던 이유 묻기 (이탈 원인 수집) ----------
+   원칙: 아이에게는 묻지 않는다(자책감). 부모 창에서만, 오래 쉬었을 때 1회. */
+function daysSinceLastActive(){
+  const days=DB.activeDays().sort();
+  if(!days.length) return 0;
+  const last=new Date(days[days.length-1]+'T00:00:00').getTime();
+  return Math.floor((Date.now()-last)/864e5);
+}
+function gapAskHtml(){
+  // 마지막 활동이 7일 이상 전이고, 아직 답하지 않았을 때만
+  const gap=daysSinceLastActive();
+  if(gap<7) return '';
+  let asked=null; try{ asked=localStorage.getItem('simji_gap_asked'); }catch(e){}
+  const tag=DB.today().slice(0,7); // 한 달에 한 번까지만
+  if(asked===tag) return '';
+  return '<div class="card" id="gap-box" style="margin-bottom:14px;border:1px dashed var(--line)">'
+    + '<div style="font-weight:700;margin-bottom:4px">🌱 '+childNameOr('아이')+'가 '+gap+'일째 쉬고 있어요</div>'
+    + '<div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:10px">괜찮습니다. 좋은 습관은 하루아침에 만들어지지 않으니까요.<br>다만 <b>무엇이 걸림돌이었는지</b> 한 가지만 알려주시면, 그 부분을 고치겠습니다.</div>'
+    + gapBtn('busy','바빠서 챙겨주지 못했어요')
+    + gapBtn('forget','아이도 저도 잊어버렸어요')
+    + gapBtn('hard','아이가 문장 쓰기를 어려워해요')
+    + gapBtn('boring','아이가 재미없어해요')
+    + gapBtn('device','기기를 쓰기 불편했어요')
+    + gapBtn('other','다른 이유예요')
+    + '<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:4px;cursor:pointer" onclick="closeGapAsk()">나중에 답할게요</div>'
+    + '</div>';
+}
+function childNameOr(fallback){
+  try{ const p=DB.profile(); return (p&&p.name)?p.name:fallback; }catch(e){ return fallback; }
+}
+function gapBtn(code,label){
+  return '<div onclick="sendGap(\''+code+'\')" style="cursor:pointer;font-size:13px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px">'+label+'</div>';
+}
+function sendGap(code){
+  const gap=daysSinceLastActive();
+  try{ logEvent('gap_reason', { reason:code, gapDays:gap }); }catch(e){}
+  try{ localStorage.setItem('simji_gap_asked', DB.today().slice(0,7)); }catch(e){}
+  const box=document.getElementById('gap-box');
+  if(box) box.innerHTML='<div style="font-size:13px;color:var(--teal);padding:12px 0;text-align:center">알려주셔서 고맙습니다 💛<br>오늘 다시 시작하면 그걸로 충분해요.</div>';
+}
+function closeGapAsk(){
+  try{ localStorage.setItem('simji_gap_asked', DB.today().slice(0,7)); }catch(e){}
+  const box=document.getElementById('gap-box'); if(box) box.remove();
+}
+
 /* ---------- 나의 문장 모음 (평생 아카이브) ---------- */
 function renderSentences(){
   const d=DB.load(); const p=DB.profile(); const nm=p?p.name:'나';
@@ -735,6 +780,7 @@ function renderParent(){
   document.getElementById('sc-parent').innerHTML =
     '<div class="loop-hero"><p>부모 창 · 같은 아이를 함께</p><h1>오늘 '+(DB.profile()?esc(DB.profile().name):'우리 아이')+'</h1>'
     + '<div class="streak">오늘 루프 '+doneCount+'/4'+(idx!=null?' · 상태 '+idx:'')+(wb!=null?' · 마음 '+wb:'')+'</div></div>'
+    + gapAskHtml()
     + '<div class="card" style="margin-bottom:14px;background:var(--mint-soft);border:1px solid var(--mint)"><div style="font-weight:700;margin-bottom:6px">📌 부모님께 드리는 한 가지 부탁</div><div style="font-size:13px;line-height:1.75;color:var(--ink)">기록했는지 <b>확인하지 마시고</b>, 무엇을 읽었는지 <b>물어봐 주세요.</b><br>검사받는 느낌이 들면 아이는 멈춥니다. 이 앱의 기록은 숙제가 아니라 아이의 것이에요.<br><span style="color:var(--muted)">좋은 습관은 하루아침에 만들어지지 않습니다. 한 줄부터 천천히 함께해 주세요.</span></div></div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-size:13px;color:var(--muted);margin-bottom:8px">오늘의 대화 한마디 (자기 전 1분)</div>'+msgHtml+'</div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:8px">🙏 감사 보물상자 · '+gall.length+'개</div>'+gHtml+'</div>'
@@ -845,7 +891,31 @@ function finishOnboard(btn){
 }
 function isSubscribed(){ return localStorage.getItem('simji_subscribed')==='1'; }
 function cancelSub(){
-  if(confirm('구독 해지는 카카오톡 채널 문의로 도와드려요.\n채널을 열까요?')){ window.open('http://pf.kakao.com/_hxaxbnX','_blank'); }
+  showOverlay(
+    '<div style="font-size:30px;margin-bottom:6px">💛</div>'
+    +'<h2>구독을 해지하시나요</h2>'
+    +'<p style="line-height:1.7;font-size:14px">그동안 함께해주셔서 고맙습니다. 해지하시더라도 <b>아이의 기록은 지워지지 않아요.</b></p>'
+    +'<div id="cancel-box" style="text-align:left;margin-top:8px">'
+      +'<div style="font-size:13px;color:var(--muted);margin-bottom:10px">떠나시기 전에 <b>이유 하나만</b> 알려주시면, 다음 가정에게는 더 나은 앱을 드릴 수 있습니다.</div>'
+      +cancelBtn('price','가격이 부담돼요')
+      +cancelBtn('notused','아이가 잘 쓰지 않아요')
+      +cancelBtn('hard','아이에게 어려워요')
+      +cancelBtn('boring','아이가 흥미를 잃었어요')
+      +cancelBtn('nochange','기대한 변화를 못 느꼈어요')
+      +cancelBtn('other','다른 이유예요')
+    +'</div>'
+    +'<button class="btn btn-ghost" style="width:100%;margin-top:10px;font-size:13px" onclick="this.closest(\'.ovl\').remove()">그냥 계속 쓸래요</button>'
+  );
+}
+function cancelBtn(code,label){
+  return '<div onclick="sendCancelReason(\''+code+'\')" style="cursor:pointer;font-size:13px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px">'+label+'</div>';
+}
+function sendCancelReason(code){
+  try{ logEvent('churn_reason', { reason:code, at:'cancel' }); }catch(e){}
+  const box=document.getElementById('cancel-box');
+  if(box) box.innerHTML=
+    '<div style="font-size:13px;color:var(--teal);padding:10px 0;text-align:center;line-height:1.8">알려주셔서 고맙습니다 💛<br>해지는 카카오톡 채널에서 도와드릴게요.</div>'
+    +'<button class="btn btn-primary" style="width:100%" onclick="window.open(\'http://pf.kakao.com/_hxaxbnX\',\'_blank\')">카카오톡 채널 열기</button>';
 }
 function restoreByEmail(btn){
   var email=prompt('구독하실 때 입력한 보호자 이메일을 적어주세요.');
@@ -1403,8 +1473,25 @@ function showExpiredScreen(email){
     +'<h2>무료 체험이 끝났어요</h2>'
     +'<p style="line-height:1.7">그동안 함께해줘서 고마워요. 아이의 기록은 <b>한 달간 안전하게 보관</b>돼요 — 지금 구독하면 그대로 이어집니다. <b>커피 한 잔 값</b>으로 매달 함께해요.</p>'
     +'<button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="location.href=\'/subscribe\'">💛 구독하고 이어가기</button>'
-    +'<button class="btn btn-ghost" style="width:100%;font-size:12px;color:#7A8A85" onclick="switchEmail(this)">다른 이메일로 로그인</button>'
+    +'<div id="churn-box" style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);text-align:left">'
+      +'<div style="font-size:13px;color:var(--muted);margin-bottom:10px">잠깐만요 — 계속 쓰지 않으신다면, <b>이유 하나만</b> 알려주실 수 있을까요? 더 나은 앱을 만드는 데 큰 도움이 됩니다.</div>'
+      +churnBtn('busy','아이가 매일 하기 어려웠어요')
+      +churnBtn('hard','아이에게 어려웠어요 (문장 쓰기 등)')
+      +churnBtn('boring','아이가 흥미를 잃었어요')
+      +churnBtn('price','가격이 부담돼요')
+      +churnBtn('nochange','변화를 잘 못 느꼈어요')
+      +churnBtn('other','다른 이유예요')
+    +'</div>'
+    +'<button class="btn btn-ghost" style="width:100%;font-size:12px;color:#7A8A85;margin-top:10px" onclick="switchEmail(this)">다른 이메일로 로그인</button>'
   );
+}
+function churnBtn(code,label){
+  return '<div onclick="sendChurn(\''+code+'\')" style="cursor:pointer;font-size:13px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px">'+label+'</div>';
+}
+function sendChurn(code){
+  try{ logEvent('churn_reason', { reason:code, at:'trial_expired' }); }catch(e){}
+  const box=document.getElementById('churn-box');
+  if(box) box.innerHTML='<div style="font-size:13px;color:var(--teal);padding:10px 0;text-align:center">알려주셔서 고맙습니다 💛<br>보내주신 의견은 앱을 고치는 데 쓰입니다.</div>';
 }
 function switchEmail(btn){
   var o=btn&&btn.closest('.ovl'); if(o) o.remove();
