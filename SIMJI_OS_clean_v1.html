@@ -107,6 +107,7 @@ textarea:focus,input:focus{outline:none;border-color:var(--teal)}
   <div class="topbar">
     <div class="brand">심지OS <small>· 뇌심지동</small></div>
     <div style="display:flex;align-items:center;gap:4px">
+      <div class="sub" id="child-label" onclick="openChildSwitch()" style="cursor:pointer;border:1px solid var(--mint);color:var(--teal);border-radius:999px;padding:3px 12px;display:none"></div>
       <div class="sub" id="role-label" onclick="toggleRole()" style="cursor:pointer;border:1px solid var(--line);border-radius:999px;padding:3px 12px">학생 ▾</div>
       <div class="gear" onclick="openSettings()">⚙</div>
     </div>
@@ -152,14 +153,141 @@ const STAGES = [
 const AI_ENDPOINT = '/ai';        // 서버 프록시(Gemini/Vertex) → 없으면 폴백
 const METRICS_ENDPOINT = '/metrics/event';
 
-/* ---------- Storage (localStorage, 하루 단위 루프 상태) ---------- */
+/* ---------- 자녀 프로필 관리 (형제자매 저장소 분리) ----------
+   설계 원칙: 기존 사용자의 데이터는 절대 옮기지 않는다.
+   기존 키('simji_clean_v1')를 첫째의 키로 그대로 쓰고, 둘째부터 새 키를 부여한다. */
+const CHILDREN_KEY='simji_children', ACTIVE_KEY='simji_active_child', LEGACY_KEY='simji_clean_v1';
+function getChildren(){ try{ return JSON.parse(localStorage.getItem(CHILDREN_KEY))||[]; }catch(e){ return []; } }
+function saveChildren(list){ try{ localStorage.setItem(CHILDREN_KEY, JSON.stringify(list)); }catch(e){} }
+function activeChildId(){ try{ return localStorage.getItem(ACTIVE_KEY)||''; }catch(e){ return ''; } }
+function setActiveChild(id){ try{ localStorage.setItem(ACTIVE_KEY, id); }catch(e){} }
+function activeChild(){
+  const l=getChildren(); if(!l.length) return null;
+  const id=activeChildId();
+  return l.filter(function(c){return c.id===id;})[0] || l[0];
+}
+// 최초 실행 시: 기존 데이터가 있으면 첫째로 편입 (데이터 이동 없음)
+function ensureChildren(){
+  let l=getChildren();
+  if(l.length){ if(!activeChildId()) setActiveChild(l[0].id); return l; }
+  let raw=null; try{ raw=localStorage.getItem(LEGACY_KEY); }catch(e){}
+  if(raw){
+    let nm='첫째';
+    try{ const d=JSON.parse(raw); if(d&&d.profile&&d.profile.name) nm=d.profile.name; }catch(e){}
+    l=[{id:'first', name:nm, key:LEGACY_KEY}];
+    saveChildren(l); setActiveChild('first');
+  }
+  return l;
+}
+// 온보딩·이름변경 후 자녀 목록과 동기화
+function syncChildFromProfile(){
+  const p=DB.profile(); if(!p||!p.name) return;
+  let l=getChildren();
+  if(!l.length){ l=[{id:'first', name:p.name, key:LEGACY_KEY}]; saveChildren(l); setActiveChild('first'); }
+  else{
+    const id=activeChildId()||l[0].id;
+    l=l.map(function(c){ return c.id===id ? Object.assign({},c,{name:p.name}) : c; });
+    saveChildren(l);
+  }
+  renderChildLabel();
+}
+function addChild(name){
+  const l=getChildren();
+  const id='c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  l.push({id:id, name:(name||'').trim()||'새 아이', key:LEGACY_KEY+'__'+id});
+  saveChildren(l); setActiveChild(id);
+}
+function renderChildLabel(){
+  const el=document.getElementById('child-label'); if(!el) return;
+  const l=getChildren();
+  if(l.length<2){ el.style.display='none'; return; }
+  const c=activeChild();
+  el.style.display=''; el.textContent='👦 '+((c&&c.name)||'아이')+' ▾';
+}
+function openChildSwitch(){
+  const l=getChildren(); const cur=activeChildId();
+  const rows=l.map(function(c){
+    const on=(c.id===cur);
+    return '<div onclick="switchChild(\''+c.id+'\')" style="cursor:pointer;padding:14px 12px;border-radius:12px;margin-bottom:8px;border:1px solid '+(on?'var(--mint)':'var(--line)')+';background:'+(on?'var(--mint-soft)':'#fff')+'">'
+      + '<b>'+esc(c.name)+'</b>'+(on?' <span style="color:var(--teal);font-size:12px">· 지금 사용 중</span>':'')+'</div>';
+  }).join('');
+  showOverlay(
+    '<div style="font-size:30px;margin-bottom:4px">👨‍👩‍👧‍👦</div>'
+    + '<h2>어떤 아이인가요?</h2>'
+    + '<p style="font-size:13px;color:var(--muted);margin-bottom:12px">아이마다 기록이 따로 쌓여요. 형제가 같은 기기를 쓴다면 꼭 바꿔 주세요.</p>'
+    + rows
+    + '<input type="text" id="newChildName" placeholder="새로 추가할 아이 이름" style="margin-top:6px">'
+    + '<button class="btn btn-ghost" onclick="doAddChild()">+ 아이 추가하기</button>'
+    + '<button class="btn btn-primary" style="margin-top:8px" onclick="this.closest(\'.ovl\').remove()">닫기</button>'
+  );
+}
+function switchChild(id){
+  setActiveChild(id);
+  const o=document.querySelector('.ovl'); if(o) o.remove();
+  renderChildLabel();
+  ROLE='student';
+  const rl=document.getElementById('role-label'); if(rl) rl.textContent='학생 ▾';
+  goHome(); maybeOnboard();
+}
+function doAddChild(){
+  const el=document.getElementById('newChildName');
+  const nm=(el&&el.value||'').trim();
+  if(!nm){ toast('아이 이름을 적어주세요'); return; }
+  addChild(nm);
+  const o=document.querySelector('.ovl'); if(o) o.remove();
+  renderChildLabel();
+  ROLE='student';
+  const rl=document.getElementById('role-label'); if(rl) rl.textContent='학생 ▾';
+  goHome(); maybeOnboard();
+}
+
+/* ---------- 나의 문장 모음 (평생 아카이브) ---------- */
+function renderSentences(){
+  const d=DB.load(); const p=DB.profile(); const nm=p?p.name:'나';
+  const reads=(d.reading||[]).filter(function(e){ return e.recon && e.recon.trim(); });
+  const total=reads.length;
+  // 연도별로 묶기 (최신순)
+  const byYear={};
+  reads.slice().reverse().forEach(function(e){
+    const y=(e.date||'').slice(0,4)||'기타';
+    if(!byYear[y]) byYear[y]=[];
+    byYear[y].push(e);
+  });
+  const years=Object.keys(byYear).sort().reverse();
+  let body='';
+  if(!total){
+    body='<div class="card"><div style="font-size:14px;color:var(--muted);padding:10px 0;text-align:center">아직 모은 문장이 없어요.<br>오늘 읽은 책에서 마음에 남은 한 줄을 적어볼까? 🌱</div></div>';
+  } else {
+    years.forEach(function(y){
+      const items=byYear[y];
+      body += '<div style="font-weight:700;color:var(--teal);margin:16px 2px 8px">'+y+'년 · 문장 '+items.length+'개</div>';
+      body += items.map(function(e){
+        return '<div class="card" style="margin-bottom:8px;padding:14px">'
+          + '<div style="font-size:15px;line-height:1.75;color:var(--ink)">“'+esc(e.recon.trim())+'”</div>'
+          + '<div style="font-size:11px;color:var(--muted);margin-top:8px">'+esc(e.date||'')+(e.title?' · '+esc(e.title):'')+'</div>'
+          + (e.answer?'<div style="font-size:12px;color:var(--teal);margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)">💭 '+esc(e.answer)+'</div>':'')
+          + '</div>';
+      }).join('');
+    });
+  }
+  document.getElementById('sc-myroom').innerHTML =
+    '<div class="loop-hero" style="background:linear-gradient(135deg,#1B6F5B,#2F9E83)"><p>평생 남는 기록</p><h1>'+esc(nm)+'의 문장 모음</h1>'
+    + '<div class="streak">🌱 마음에 남은 문장 '+total+'개'+(total>=100?' · 100문장 달성 🏅':'')+'</div></div>'
+    + '<p class="sub" style="margin-top:10px">지금까지 읽으며 마음에 남긴 문장들이에요. 하나도 사라지지 않아요.</p>'
+    + body
+    + '<button class="btn btn-ghost" style="margin-top:14px" onclick="renderMyRoom()">← 나의 방으로</button>'
+    + backHtml();
+  go('myroom');
+}
+
+
 const DB = {
   dreams(){ const d=this.load(); return d.dreams||[]; },
   currentDream(){ const ds=this.dreams(); return ds.length?ds[ds.length-1].text:''; },
   setDream(text){ const d=this.load(); if(!d.dreams) d.dreams=[]; d.dreams.push({date:this.today(), text:text}); this.save(d); },
   localDate(dt){ const d=dt||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); },
   today(){ return this.localDate(); },
-  _key(){ return 'simji_clean_v1'; },
+  _key(){ try{ const c=activeChild(); return (c&&c.key)||LEGACY_KEY; }catch(e){ return LEGACY_KEY; } },
   load(){ try{ return JSON.parse(localStorage.getItem(this._key())) || {days:{},lastDay:null}; }catch(e){ return {days:{},lastDay:null}; } },
   save(d){ try{ localStorage.setItem(this._key(), JSON.stringify(d)); }catch(e){} },
   day(){ const d=this.load(); const t=this.today(); if(!d.days[t]) d.days[t]={ done:{}, stateIndex:null }; return d.days[t]; },
@@ -182,7 +310,7 @@ const DB = {
   addGratitudes(arr){ const d=this.load(); if(!d.gratitudes) d.gratitudes=[]; const t=this.today(); arr.forEach(function(g){ d.gratitudes.push({date:t,at:Date.now(),text:g}); }); this.save(d); },
   recentStateIndices(n){ const d=this.load(); const out=Object.keys(d.days).sort().map(function(k){ return {date:k, idx:d.days[k].stateIndex}; }).filter(function(x){ return x.idx!=null; }); return out.slice(-(n||7)); },
   profile(){ const d=this.load(); return d.profile||null; },
-  setProfile(name,band,grade,gender){ const d=this.load(); const id=(d.profile&&d.profile.id)||('c_'+Math.random().toString(36).slice(2,8)); d.profile={name:name,id:id,band:band||(d.profile&&d.profile.band)||'elem',grade:grade||(d.profile&&d.profile.grade)||'',gender:gender||(d.profile&&d.profile.gender)||''}; this.save(d); },
+  setProfile(name,band,grade,gender){ const d=this.load(); const id=(d.profile&&d.profile.id)||('c_'+Math.random().toString(36).slice(2,8)); d.profile={name:name,id:id,band:band||(d.profile&&d.profile.band)||'elem',grade:grade||(d.profile&&d.profile.grade)||'',gender:gender||(d.profile&&d.profile.gender)||''}; this.save(d); try{ syncChildFromProfile(); }catch(e){} },
   bestReaction(){ const d=this.load(); return d.bestRt||null; },
   setBestReaction(ms){ const d=this.load(); d.bestRt=ms; this.save(d); },
   last7(){ const d=this.load(); const out=[]; const names=['일','월','화','수','목','금','토'];
@@ -289,7 +417,7 @@ function renderHome(){
         return '<button class="btn btn-primary" style="margin-top:16px" onclick="enterStage(\''+next+'\')">'+lb+'</button>';
       })() : '<div class="card" style="margin-top:16px;text-align:center;color:var(--teal);font-weight:700">'+(tone()==='teen'?'✓ 오늘 완료 — 내일 또 보자':'🌱 오늘도 한 뼘 자랐어요 — 내일 또 만나요')+'</div>')
     + (pastToday().length? '<div class="card" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:var(--mint-soft);border-color:var(--mint)" onclick="openPastToday()"><div><div style="font-weight:700">📅 지난날의 오늘</div><div style="font-size:12px;color:var(--muted)">'+(new Date().getFullYear()-pastToday()[0].y)+'년 전 오늘의 네 기록이 기다리고 있어</div></div><div style="color:var(--muted)">→</div></div>' : '')
-    + '<div class="card" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="renderMyRoom()"><div><div style="font-weight:700">🗝️ 나의 방</div><div style="font-size:12px;color:var(--muted)">나의 도서관 · 감사 보물상자 · 발자취</div></div><div style="color:var(--muted)">→</div></div>'
+    + '<div class="card" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="renderMyRoom()"><div><div style="font-weight:700">🗝️ 나의 방</div><div style="font-size:12px;color:var(--muted)">문장 모음 · 나의 도서관 · 감사 보물상자</div></div><div style="color:var(--muted)">→</div></div>'
     + '<div class="nonmed">심지OS는 의료 진단이 아니라 매일의 성장을 돕는 도구예요.<br>측정·지수는 다른 사람과 비교하지 않고, 어제의 나와만 비교해요.</div>';
 }
 
@@ -436,9 +564,10 @@ function notifyRecord(recordText){
     if(localStorage.getItem('simji_subscribed')!=='1') return;
     var email=getEmail(); if(!email) return;
     var today=new Date().toISOString().slice(0,10);
-    if(localStorage.getItem('simji_notify_day')===today) return;
+    var _nk='simji_notify_day_'+(activeChildId()||'first');
+    if(localStorage.getItem(_nk)===today) return;
     var p=DB.profile()||{}; var name=p.name||'우리 아이';
-    localStorage.setItem('simji_notify_day', today);   // 먼저 표시해 중복 발송 방지
+    localStorage.setItem(_nk, today);   // 먼저 표시해 중복 발송 방지
     fetch('/notify/record',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email:email, childName:name, record:(recordText||'').slice(0,180)})}).catch(function(){});
   }catch(e){}
@@ -481,32 +610,45 @@ function renderWisdom(){
   const _wp=DB.profile(); const poss=(_wp&&_wp.name)?esc(_wp.name)+'의':'네';
   const log=DB.readingLog(); const total=log.length; const recent=log.slice(-3).reverse();
   const pgSum=log.reduce(function(x,e){return x+(e.pages||0);},0);
+  const reconCount=log.reduce(function(x,e){return x+((e.recon&&e.recon.trim())?1:0);},0);
   const mtr=pgSum*5; const laps=Math.floor(mtr/42195); const cur=mtr-laps*42195; const pct=Math.min(100,Math.round(cur/42195*100));
   const listHtml = total
     ? recent.map(function(e){ const tt=e.title||(e.recon?e.recon.slice(0,14)+'…':'제목 없이 남긴 기록'); return '<div class="rlog"><b>'+esc(tt)+'</b><span>'+e.date+(e.pages?' · '+e.pages+'쪽':'')+'</span></div>'; }).join('')
     : '<div class="sub" style="text-align:center;padding:4px 0 10px">아직 기록이 없어요. 오늘 첫 기록을 남겨볼까요?</div>';
   document.getElementById('sc-wisdom').innerHTML =
     headHtml(s)
-    + '<div class="marathon">🏃 리딩 마라톤 · <b>'+total+'</b>권·편 · '+pgSum+'쪽 = '+fmtDist(mtr)+(laps?' · 완주 '+laps+'회 🏅':'')
-    + '<div style="background:rgba(255,255,255,.25);border-radius:999px;height:7px;overflow:hidden;margin-top:8px"><div style="background:#fff;height:100%;width:'+pct+'%"></div></div>'
-    + '<div style="font-size:11px;opacity:.85;margin-top:4px">'+(laps+1)+'번째 마라톤 '+pct+'% · 1쪽 = 5m · 완주 42.195km</div></div>'
     + listHtml
     + '<p class="sub">정답을 찾는 시간이 아니라, <b>마음에 남은 문장에서 생각이 자라는</b> 시간이에요.</p>'
-    + '<div class="q">오늘 읽은 책</div>'
+    + '<div class="q" style="font-size:16px">📖 오늘 마음에 남은 문장</div>'
+    + '<textarea id="recon" rows="3" placeholder="짧아도 좋아. 한 줄이면 충분해 🌱"></textarea>'
+    + '<div class="hint" style="text-align:left;margin:-4px 0 12px;line-height:1.7">막막하면 이렇게 시작해도 좋아요<br>· 제일 기억에 남는 <b>장면</b> 하나<br>· 주인공이 한 <b>말</b> 중에 마음에 남은 것<br>· 오늘 <b>새로 알게 된</b> 것 하나</div>'
+    + '<div class="coach" style="margin-top:6px"><div class="label">읽기·질문 코치</div><div class="interp" id="wq">한 줄을 적어주면, 한 뼘 더 깊어지는 질문을 건넬게요.</div><div id="wa-wrap" style="display:none;margin-top:10px"><div class="q" style="margin:0 0 6px;font-size:13px">💭 질문에 대한 내 생각</div>'+gratInput('wanswer','떠오르는 생각을 적어봐…')+'</div></div>'
+    + '<button class="btn btn-ghost" style="margin-top:12px" onclick="askWisdom()">열린 질문 받기</button>'
+    + '<div class="q" style="margin-top:20px">오늘 읽은 책</div>'
     + '<div style="display:flex;gap:8px;margin-bottom:6px"><input type="text" id="rtitle" placeholder="책·글 제목" style="flex:1;margin-bottom:0"><input type="number" id="rpages" min="1" max="2000" placeholder="쪽수" style="width:90px;margin-bottom:0;text-align:center"></div>'
     + '<div class="hint" style="text-align:left;margin:0 0 10px">읽은 쪽수는 1쪽 = 5m로 달리기 거리가 돼요 🏃</div>'
-    + '<div class="q" style="margin-top:4px">📖 마음에 남은 문장</div>'
-    + '<textarea id="recon" rows="3" placeholder="오늘 읽은 부분에서 마음에 와닿거나 기억에 남는 문장·장면을 적어봐"></textarea>'
-    + '<div class="coach" style="margin-top:14px"><div class="label">읽기·질문 코치</div><div class="interp" id="wq">마음에 남은 문장을 적어주면, 한 뼘 더 깊어지는 질문을 건넬게요.</div><div id="wa-wrap" style="display:none;margin-top:10px"><div class="q" style="margin:0 0 6px;font-size:13px">💭 질문에 대한 내 생각</div>'+gratInput('wanswer','떠오르는 생각을 적어봐…')+'</div></div>'
-    + '<button class="btn btn-ghost" style="margin-top:12px" onclick="askWisdom()">열린 질문 받기</button>'
     + '<button class="btn btn-primary" style="margin-top:10px" onclick="saveReading()">기록 남기고 다음 →</button>'
+    + '<div class="marathon" style="margin-top:16px">🏃 리딩 마라톤 · <b>'+total+'</b>권·편 · '+pgSum+'쪽 = '+fmtDist(mtr)+(laps?' · 완주 '+laps+'회 🏅':'')
+    + '<div style="background:rgba(255,255,255,.25);border-radius:999px;height:7px;overflow:hidden;margin-top:8px"><div style="background:#fff;height:100%;width:'+pct+'%"></div></div>'
+    + '<div style="font-size:11px;opacity:.85;margin-top:4px">'+(laps+1)+'번째 마라톤 '+pct+'% · 1쪽 = 5m · 완주 42.195km</div>'
+    + '<div style="font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.25)">🌱 마음에 남은 문장 <b>'+reconCount+'</b>개'+(reconCount>=100?' · 100문장 달성 🏅':'')+'</div></div>'
     + backHtml();
   go('wisdom');
 }
+var _reconNudged=false;
 function saveReading(){
   const title=(document.getElementById('rtitle').value||'').trim();
   const recon=(document.getElementById('recon').value||'').trim();
   if(!title && !recon){ toast('한 줄이라도 적어주세요'); return; }
+  // 마음에 남은 문장이 비면 한 번만 부드럽게 권함 (막지는 않음)
+  if(!recon){
+    if(!_reconNudged){
+      _reconNudged=true;
+      toast('한 줄만 적어볼까? 짧아도 좋아 🌱');
+      const el=document.getElementById('recon'); if(el) el.focus();
+      return;
+    }
+  } else { _reconNudged=false; }
   const pages=Math.max(0,Math.min(2000,parseInt((document.getElementById('rpages')||{}).value,10)||0));
   const ans=((document.getElementById('wanswer')||{}).value||'').trim();
   DB.addReading({ title:title, recon:recon, pages:pages, question:_lastWQ, answer:ans });
@@ -593,6 +735,7 @@ function renderParent(){
   document.getElementById('sc-parent').innerHTML =
     '<div class="loop-hero"><p>부모 창 · 같은 아이를 함께</p><h1>오늘 '+(DB.profile()?esc(DB.profile().name):'우리 아이')+'</h1>'
     + '<div class="streak">오늘 루프 '+doneCount+'/4'+(idx!=null?' · 상태 '+idx:'')+(wb!=null?' · 마음 '+wb:'')+'</div></div>'
+    + '<div class="card" style="margin-bottom:14px;background:var(--mint-soft);border:1px solid var(--mint)"><div style="font-weight:700;margin-bottom:6px">📌 부모님께 드리는 한 가지 부탁</div><div style="font-size:13px;line-height:1.75;color:var(--ink)">기록했는지 <b>확인하지 마시고</b>, 무엇을 읽었는지 <b>물어봐 주세요.</b><br>검사받는 느낌이 들면 아이는 멈춥니다. 이 앱의 기록은 숙제가 아니라 아이의 것이에요.<br><span style="color:var(--muted)">좋은 습관은 하루아침에 만들어지지 않습니다. 한 줄부터 천천히 함께해 주세요.</span></div></div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-size:13px;color:var(--muted);margin-bottom:8px">오늘의 대화 한마디 (자기 전 1분)</div>'+msgHtml+'</div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:8px">🙏 감사 보물상자 · '+gall.length+'개</div>'+gHtml+'</div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:8px">📚 리딩 마라톤 · '+rlog.length+'권·편</div>'
@@ -672,14 +815,14 @@ function showWelcomeCard(force){
   if(force){
     // 첫날 환영(온보딩 직후 1회)
     head='환영해요! 🌱';
-    sub='아침엔 1분, 저녁엔 잠깐. 아이의 마음·읽기·실천을 매일 함께 돌아요. <b>2주 무료 체험</b> 후에는 구독으로 이어져요. 구독하면 아이의 매일 활동은 물론, 카카오 알림톡과 <b>월간 성장 리포트</b> 같은 부모 기능도 함께 이용할 수 있어요.';
+    sub='아침 1분, 저녁 5분. 숏폼에 익숙해진 아이가 <b>매일 짧은 글을 읽는 습관</b>을 만들어요. <b>2주 무료 체험</b> 후에는 구독으로 이어져요. 구독하면 아이의 매일 활동은 물론, 카카오 알림톡과 <b>월간 성장 리포트</b> 같은 부모 기능도 함께 이용할 수 있어요.';
   } else {
     // 재방문: 며칠에 한 번만 조용히 안내(하루 한 번). 그 외 날은 조용.
     var showToday = (ti.left===7) || (ti.left<=3);
     if(!showToday) return;
     if(localStorage.getItem('simji_wcard_day')===today) return;  // 같은 날 중복 방지
     head='부모 기능으로 더 깊이 💛';
-    sub='2주 무료 체험이 끝나면 구독으로 이어져요. 구독하면 아이의 매일 활동과 함께 카카오 알림톡·<b>월간 성장 리포트</b> 같은 부모 기능도 이용할 수 있어요. <b>커피 한 잔 값</b>으로 매달 함께해요.';
+    sub='매일 하는 5분이, 일주일에 두 번 하는 한 시간을 이깁니다. 2주 무료 체험이 끝나면 구독으로 이어져요. 구독하면 아이의 매일 활동과 함께 카카오 알림톡·<b>월간 성장 리포트</b> 같은 부모 기능도 이용할 수 있어요. <b>커피 한 잔 값</b>으로 매달 함께해요.';
   }
   localStorage.setItem('simji_wcard_day', today);
   showOverlay(
@@ -992,7 +1135,7 @@ function renderMyRoom(){
   const grats=(d.gratitudes||[]); const reads=(d.reading||[]);
   const pg=reads.reduce(function(x,e){return x+(e.pages||0);},0);
   const mtr=pg*5; const laps=Math.floor(mtr/42195);
-  const G=200, R=100; // 표시 상한 (오래 쓴 아이도 가볍게)
+  const G=500, R=500; // 표시 상한 (넉넉히 — 문장 모음은 전체 표시)
   const gShow=grats.slice(-G).reverse(); const rShow=reads.slice(-R).reverse();
   const gMore=grats.length-gShow.length; const rMore=reads.length-rShow.length;
   const rHtml = rShow.length
@@ -1011,6 +1154,7 @@ function renderMyRoom(){
     + (function(){ const dm=DB.currentDream(); return '<div class="card" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openDream()"><div><div style="font-weight:700">🌟 나의 꿈</div><div style="font-size:13px;color:'+(dm?'var(--ink)':'var(--muted)')+';margin-top:2px">'+(dm?esc(dm):'아직 찾는 중 — 그것도 멋진 여정이야')+'</div></div><div style="color:var(--muted)">'+(dm?'바꾸기':'적기')+' →</div></div>'; })()
     + '<button class="btn btn-primary" style="width:100%;margin-bottom:14px" onclick="giftFromPast()">🎁 그날의 나에게서 선물 받기</button>'
     + '<button class="btn btn-ghost" style="width:100%;margin-bottom:14px;margin-top:-4px" onclick="openPastToday()">📅 지난날의 오늘 보기</button>'
+    + '<div class="card" style="margin-bottom:14px;cursor:pointer;background:var(--mint-soft);border:1px solid var(--mint)" onclick="renderSentences()"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:700">🌱 나의 문장 모음</div><div style="font-size:12px;color:var(--muted)">지금까지 모은 문장 '+reads.filter(function(e){return e.recon&&e.recon.trim();}).length+'개 · 하나도 사라지지 않아요</div></div><div style="color:var(--teal)">→</div></div></div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:4px">📚 나의 도서관 · '+reads.length+'권·편'+(laps?' · 완주 🏅×'+laps:'')+'</div>'+rHtml+(rMore>0?'<div style="font-size:11px;color:var(--muted);padding-top:8px">…그 이전 기록 '+rMore+'권은 소중히 보관 중</div>':'')+'</div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:4px">🙏 감사 보물상자 · '+grats.length+'개</div>'+gHtml+(gMore>0?'<div style="font-size:11px;color:var(--muted);padding-top:8px">…그 이전 보물 '+gMore+'개는 소중히 보관 중</div>':'')+'</div>'
     + (marks.length?'<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:8px">🏅 나의 발자취</div><div style="display:flex;flex-wrap:wrap;gap:8px">'+marks.map(function(m){return '<span style="background:var(--mint-soft);border:1px solid var(--mint);border-radius:999px;padding:6px 12px;font-size:12px;white-space:nowrap">'+m+'</span>';}).join('')+'</div></div>':'')
@@ -1278,6 +1422,7 @@ function startAuthFlow(){
   });
 }
 function bootApp(){
+  try{ ensureChildren(); renderChildLabel(); }catch(e){}
   maybeOnboard();
   if(DB.profile()) showWelcomeCard(false);
   checkMilestones(); checkGrowthMoments(); checkFruitMoments(); checkRunMoments(); checkYearBand();

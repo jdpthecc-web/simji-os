@@ -33,7 +33,7 @@
   <div id="form-view">
     <div class="logo">심지OS</div>
     <h1>구독하고 시작하기</h1>
-    <p style="text-align:center;color:#5B6B7A;font-size:14px;margin:2px 0 16px;line-height:1.6">하루 1분 습관, 커피 한 잔 값으로 매달 함께해요.</p>
+    <p style="text-align:center;color:#5B6B7A;font-size:14px;margin:2px 0 16px;line-height:1.6">매일 5분 읽기 습관, 커피 한 잔 값으로 함께해요.</p>
     <div class="sub">카드를 한 번만 등록하면 매달 자동으로 결제됩니다. 언제든 해지할 수 있어요.</div>
     <div id="eb-banner" style="font-size:13px;font-weight:700;color:var(--mint);margin:-14px 0 18px;min-height:18px"></div>
 
@@ -52,7 +52,9 @@
     <input type="text" id="buyerName" placeholder="홍길동" autocomplete="name">
     <div class="field-label">보호자 이메일</div>
     <input type="email" id="email" placeholder="example@email.com" autocomplete="email">
-    <div class="links">결제·환불 정보를 받을 이메일입니다. 자녀가 만 14세 미만인 경우 보호자(부모) 명의로 가입해 주세요.</div>
+    <div class="field-label">알림톡 받을 보호자 휴대폰</div>
+    <input type="tel" id="phone" placeholder="010-0000-0000" autocomplete="tel" inputmode="numeric">
+    <div class="links">아이의 오늘 기록을 카카오 알림톡으로 보내드릴 번호예요. 결제·환불 안내는 위 이메일로 갑니다. 자녀가 만 14세 미만인 경우 보호자(부모) 명의로 가입해 주세요.</div>
 
     <label class="row"><input type="checkbox" id="agree"> <span><a href="/terms" target="_blank">이용약관</a> · <a href="/privacy" target="_blank">개인정보처리방침</a> · <a href="/refund.html" target="_blank">이용권·환불 안내</a>에 동의합니다.</span></label>
 
@@ -63,7 +65,7 @@
 
   <div id="done-view" class="panel hide">
     <div class="ic">🌱</div><h2>구독이 시작되었어요</h2>
-    <p id="done-msg">이제 simjios.com에서 아이와 함께 하루 1분을 시작해 보세요.</p>
+    <p id="done-msg">이제 simjios.com에서 아이와 함께 오늘 5분을 시작해 보세요.</p>
     <button class="go" onclick="location.href='/app?subscribed=1&e='+encodeURIComponent((document.getElementById('email').value||'').trim())">앱으로 가기</button>
   </div>
 
@@ -107,9 +109,10 @@
     }
   }).catch(function(){});
 
-  var email=document.getElementById('email'), buyerName=document.getElementById('buyerName'), agree=document.getElementById('agree'), goBtn=document.getElementById('goBtn');
-  function check(){ goBtn.disabled = !(agree.checked && buyerName.value.trim().length>0 && /\S+@\S+\.\S+/.test(email.value)); }
-  email.addEventListener('input', check); buyerName.addEventListener('input', check); agree.addEventListener('change', check);
+  var email=document.getElementById('email'), buyerName=document.getElementById('buyerName'), phone=document.getElementById('phone'), agree=document.getElementById('agree'), goBtn=document.getElementById('goBtn');
+  function digits(s){ return (s||'').replace(/[^0-9]/g,''); }
+  function check(){ goBtn.disabled = !(agree.checked && buyerName.value.trim().length>0 && /\S+@\S+\.\S+/.test(email.value) && digits(phone.value).length>=10); }
+  email.addEventListener('input', check); buyerName.addEventListener('input', check); phone.addEventListener('input', check); agree.addEventListener('change', check);
 
   goBtn.addEventListener('click', async function(){
     var sel = document.querySelector('.card.sel'); if(!sel) return;
@@ -124,7 +127,7 @@
       });
       if (resp && resp.code != null) { fail(resp.message || '\uce74\ub4dc \ub4f1\ub85d\uc774 \ucde8\uc18c\ub418\uc5c8\uc2b5\ub2c8\ub2e4.'); goBtn.disabled=false; goBtn.textContent='\uce74\ub4dc \ub4f1\ub85d\ud558\uace0 \uc2dc\uc791\ud558\uae30'; return; }
       var r = await fetch('/billing/portone-issue', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ billingKey: resp.billingKey, email:(email.value||'').trim(), plan: plan }) });
+        body: JSON.stringify({ billingKey: resp.billingKey, email:(email.value||'').trim(), phone: digits(phone.value), plan: plan }) });
       var d = await r.json();
       if (d.ok){
         document.getElementById('form-view').classList.add('hide');

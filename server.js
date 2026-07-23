@@ -857,9 +857,44 @@ app.post('/agents/orchestrate', adminAuth, async (req, res) => {
   res.json({ ok: true, children: Object.keys(states).length, results: results, provider: aiProvider(), at: new Date().toISOString() });
 });
 
+// 상태 점검용: 브라우저에서 /health 로 접속하면 Supabase 연결 상태를 확인할 수 있다.
+app.get('/health', async (req, res) => {
+  const out = { server:'ok', supabase: SB_ON ? 'configured' : 'not-configured', checkedAt: new Date().toISOString() };
+  if(SB_ON){
+    try{
+      const r = await fetch(SUPABASE_URL + '/rest/v1/members?select=email&limit=1', { headers: sbHeaders() });
+      out.supabase = r.ok ? 'awake' : ('error-' + r.status);
+    }catch(e){ out.supabase = 'unreachable'; }
+  }
+  res.json(out);
+});
+
+// ── Supabase 자동 깨우기 (무료 플랜 7일 미사용 시 자동 일시정지 방지) ──
+// 하루 한 번 members 테이블에 아주 가벼운 조회를 보내 '활동'을 남긴다.
+// 실패해도 서비스에는 영향 없음(로그만 남김).
+async function sbKeepAlive(){
+  if(!SB_ON){ return; }
+  try{
+    // limit=1 + head 요청에 가까운 최소 조회 (요금·트래픽 부담 거의 없음)
+    const r = await fetch(SUPABASE_URL + '/rest/v1/members?select=email&limit=1', { headers: sbHeaders() });
+    const stamp = new Date().toISOString().slice(0,19).replace('T',' ');
+    console.log(r.ok ? ('💓 Supabase keep-alive OK · ' + stamp)
+                     : ('⚠️  Supabase keep-alive 응답 이상(' + r.status + ') · ' + stamp));
+  }catch(e){
+    console.log('⚠️  Supabase keep-alive 실패:', (e && e.message) || e);
+  }
+}
+function startKeepAlive(){
+  if(!SB_ON){ console.log('ℹ️  Supabase 미설정 — keep-alive 건너뜀'); return; }
+  sbKeepAlive();                                   // 서버 시작 직후 1회
+  setInterval(sbKeepAlive, 24 * 60 * 60 * 1000);   // 이후 24시간마다
+  console.log('💓 Supabase keep-alive 예약됨 (24시간 간격)');
+}
+
 app.listen(PORT, () => {
   console.log('────────────────────────────────────────────');
   console.log(' SIMJI OS 결제 서버 실행 중 (결제: 포트원→KPN)');
   console.log(' 브라우저에서 → http://localhost:' + PORT);
   console.log('────────────────────────────────────────────');
+  startKeepAlive();
 });
