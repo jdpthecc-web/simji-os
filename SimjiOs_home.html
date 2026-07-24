@@ -104,6 +104,11 @@ header{position:sticky;top:0;z-index:50;background:rgba(250,248,243,.88);backdro
 .bullets{list-style:none;margin-top:18px}
 .bullets li{display:flex;gap:12px;margin-bottom:14px;font-size:15px;color:var(--ink)}
 .bullets li::before{content:'';flex-shrink:0;width:8px;height:8px;border-radius:50%;background:var(--teal);margin-top:9px}
+.diff-list{list-style:none;margin-top:22px}
+.diff-list li{position:relative;padding-left:26px;margin-bottom:18px;font-size:15px;line-height:1.75;color:#C9D4E0}
+.diff-list li::before{content:'';position:absolute;left:0;top:9px;width:9px;height:9px;border-radius:50%;background:var(--mint)}
+.diff-list li b{display:block;color:#fff;font-size:16px;margin-bottom:3px}
+@media(max-width:640px){.diff-list li{font-size:14.5px}}
 .panel{background:#fff;border:1px solid var(--line);border-radius:20px;padding:22px}
 .panel .row{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;font-size:14px}
 .panel .row b{color:var(--navy)}
@@ -201,11 +206,11 @@ footer .logo{color:#fff;font-size:17px;margin-bottom:10px}
     <div class="eyebrow reveal">무엇이 다른가</div>
     <h2 class="reveal">읽고, 한 줄 남기고, <span class="han" style="color:var(--teal)">질문을 받습니다</span></h2>
     <p class="lead reveal" style="margin-top:-8px">처음엔 "재밌었다" 한 줄이면 충분합니다. 그 한 줄에 AI가 질문을 건네고, 아이는 자기 생각을 씁니다. <b>그렇게 한 줄이 한 문단이 되고, 한 문단이 아이 자신의 언어가 됩니다.</b></p>
-    <ul class="bullets reveal">
-      <li class="reveal"><b>읽을거리를 정해주지 않습니다</b> — 아이가 고른 어떤 책이든 좋아요. 학교 아침 독서도, 집에 있던 책도 그대로 이어집니다</li>
-      <li class="reveal"><b>독후감이 아니라 한 줄부터</b> — 부담이 없어야 매일 합니다. 더 쓰고 싶은 날은 얼마든지 길게 써도 좋고요</li>
-      <li class="reveal"><b>AI가 그 문장에 질문을 건넵니다</b> — 정답이 없는 질문이라, 읽고 넘어가지 않고 한 번 더 생각하게 됩니다</li>
-      <li class="reveal"><b>쌓이고, 남습니다</b> — 쪽수는 거리가 되어 42.195km 완주로, 문장은 아이만의 기록으로 평생 남습니다</li>
+    <ul class="diff-list reveal">
+      <li><b>읽을거리를 정해주지 않습니다</b>아이가 고른 어떤 책이든 좋아요. 학교 아침 독서도, 집에 있던 책도 그대로 이어집니다.</li>
+      <li><b>독후감이 아니라 한 줄부터</b>부담이 없어야 매일 합니다. 더 쓰고 싶은 날은 얼마든지 길게 써도 좋고요.</li>
+      <li><b>AI가 그 문장에 질문을 건넵니다</b>정답이 없는 질문이라, 읽고 넘어가지 않고 한 번 더 생각하게 됩니다.</li>
+      <li><b>쌓이고, 남습니다</b>쪽수는 거리가 되어 42.195km 완주로, 문장은 아이만의 기록으로 평생 남습니다.</li>
     </ul>
   </div>
 </section>
