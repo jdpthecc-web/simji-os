@@ -77,6 +77,120 @@ function adminAuth(req, res, next) {
 
 /* 이탈·휴식 이유 집계 — /admin/churn (관리자 전용)
    앱이 보낸 churn_reason(체험 만료 시), gap_reason(오래 쉰 뒤 복귀 시)을 모아 보여준다. */
+/* XPRIZE 제출 증빙 — /admin/xprize (관리자 전용)
+   Build with Gemini XPRIZE 제출 항목에 맞춰 자동 집계한다.
+   대회 기간: 2026-05-19 ~ 2026-08-17 · 심지OS 실서비스 오픈: 2026년 7월 */
+app.get('/admin/xprize', adminAuth, (req, res) => {
+  const USD = Number(req.query.usd) || 1380;   // 환율은 쿼리로 조정 (?usd=1400)
+
+  let rows = [];
+  try {
+    const raw = fs.existsSync(METRICS_FILE) ? fs.readFileSync(METRICS_FILE, 'utf8') : '';
+    rows = raw.split('\n').filter(Boolean)
+      .map(l => { try { return JSON.parse(l); } catch (e) { return null; } })
+      .filter(Boolean);
+  } catch (e) {}
+
+  // ── 매출: 결제 성공(active + amount) 이벤트를 월별로 집계 ──
+  const MONTHS = ['2026-05', '2026-06', '2026-07', '2026-08'];
+  const revByMonth = {}; MONTHS.forEach(m => revByMonth[m] = { krw: 0, count: 0 });
+  let totalKrw = 0, payCount = 0;
+  rows.filter(r => r.type === 'subscription' && r.status === 'active' && Number(r.amount) > 0)
+      .forEach(r => {
+        const m = new Date(r.ts || Date.now()).toISOString().slice(0, 7);
+        if (!revByMonth[m]) revByMonth[m] = { krw: 0, count: 0 };
+        revByMonth[m].krw += Number(r.amount); revByMonth[m].count++;
+        totalKrw += Number(r.amount); payCount++;
+      });
+
+  // ── 사용자 ──
+  const activeSubs = Object.keys(billingMap).filter(k => billingMap[k].status === 'active').length;
+  const canceled   = Object.keys(billingMap).filter(k => billingMap[k].status === 'canceled').length;
+  const uniqUsers  = new Set(rows.filter(r => r.childId).map(r => r.childId)).size;
+
+  // ── 활동(제품이 실제로 쓰인 증거) ──
+  const readingEvents = rows.filter(r => r.type === 'reading').length;
+  const totalPages = rows.filter(r => r.type === 'reading')
+                         .reduce((a, r) => a + (Number(r.pages) || 0), 0);
+  const withRecon = rows.filter(r => r.type === 'reading' && r.hasRecon).length;
+  const aiQuestions = rows.filter(r => r.type === 'reading' && r.gotQ).length;
+
+  // ── 후기 ──
+  let fbCount = 0;
+  try {
+    const fbRaw = fs.existsSync(FB_FILE) ? fs.readFileSync(FB_FILE, 'utf8') : '';
+    fbCount = fbRaw.split('\n').filter(Boolean).length;
+  } catch (e) {}
+
+  const usd = v => '$' + (v / USD).toFixed(2);
+  const won = v => v.toLocaleString('ko-KR') + '원';
+
+  const monthRows = MONTHS.map(m => {
+    const d = revByMonth[m] || { krw: 0, count: 0 };
+    const label = m === '2026-05' ? '5월 (대회 시작 5/19)'
+                : m === '2026-07' ? '7월 (서비스 오픈)' : m.slice(5).replace('0', '') + '월';
+    return `<tr><td>${label}</td><td style="text-align:right">${won(d.krw)}</td><td style="text-align:right">${usd(d.krw)}</td><td style="text-align:right">${d.count}건</td></tr>`;
+  }).join('');
+
+  res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>심지OS · XPRIZE 증빙</title>
+<style>body{font-family:'Malgun Gothic',sans-serif;max-width:760px;margin:0 auto;padding:24px 18px;color:#16324F;background:#F8FAFC}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:26px 0 8px;color:#2F9E83}
+.card{background:#fff;border-radius:12px;padding:16px;margin-bottom:14px;border:1px solid #E2E8F0}
+.big{font-size:30px;font-weight:800}.sub{font-size:13px;color:#64748B;line-height:1.7}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:8px 6px;border-bottom:1px solid #E2E8F0}th{text-align:left;color:#64748B;font-weight:600;font-size:12px}
+.grid{display:flex;gap:10px;flex-wrap:wrap}.grid .card{flex:1;min-width:150px;margin:0}
+.warn{background:#FFF7ED;border:1px solid #FDBA74}</style></head><body>
+
+<h1>XPRIZE 제출 증빙</h1>
+<div class="sub">Build with Gemini XPRIZE · 대회 기간 2026-05-19 ~ 08-17 · 심지OS 실서비스 오픈 2026년 7월<br>
+환율 1 USD = ${USD.toLocaleString('ko-KR')}원 (주소 끝에 <b>?usd=1400</b> 붙이면 변경)</div>
+
+<h2>1. 매출 (Revenue by Month)</h2>
+<div class="card">
+  <table><tr><th>월</th><th style="text-align:right">매출(KRW)</th><th style="text-align:right">USD</th><th style="text-align:right">결제</th></tr>${monthRows}
+  <tr><td><b>합계</b></td><td style="text-align:right"><b>${won(totalKrw)}</b></td><td style="text-align:right"><b>${usd(totalKrw)}</b></td><td style="text-align:right"><b>${payCount}건</b></td></tr></table>
+  <div class="sub" style="margin-top:10px">※ 제3자 고객 결제만 집계됩니다. 내부·관계자 결제가 있다면 제출 시 별도 표기(Related-Party Revenue)가 필요합니다.</div>
+</div>
+
+<h2>2. 사용자 (Evidence of Real Users)</h2>
+<div class="grid">
+  <div class="card"><div class="big">${activeSubs}</div><div class="sub">유료 구독 가정</div></div>
+  <div class="card"><div class="big">${uniqUsers}</div><div class="sub">활동한 아이 수</div></div>
+  <div class="card"><div class="big">${fbCount}</div><div class="sub">받은 후기</div></div>
+</div>
+<div class="card"><div class="sub">해지 ${canceled}건 · 사용자 구성: 초등·중등 자녀를 둔 한국 가정(보호자 결제)</div></div>
+
+<h2>3. 제품 사용 증거 (AI-Native Operations)</h2>
+<div class="card">
+  <table>
+    <tr><td>독서 기록 건수</td><td style="text-align:right"><b>${readingEvents}건</b></td></tr>
+    <tr><td>누적 읽은 쪽수</td><td style="text-align:right"><b>${totalPages.toLocaleString('ko-KR')}쪽</b> (${(totalPages*5/1000).toFixed(1)}km)</td></tr>
+    <tr><td>아이가 문장을 남긴 횟수</td><td style="text-align:right"><b>${withRecon}건</b></td></tr>
+    <tr><td>Gemini 질문 생성 횟수</td><td style="text-align:right"><b>${aiQuestions}건</b></td></tr>
+  </table>
+  <div class="sub" style="margin-top:10px">※ Gemini API가 아이가 쓴 문장을 읽고 열린 질문을 생성합니다. 프로덕션에서 매일 실행되는 AI 기능입니다.</div>
+</div>
+
+<h2>4. 직접 채워야 하는 항목</h2>
+<div class="card warn">
+  <div class="sub">아래는 서버가 알 수 없어 <b>대표님이 기록해두셔야</b> 합니다. 지금부터 영수증을 모아두세요.
+  <table style="margin-top:8px">
+    <tr><td>Total Expenses</td><td style="text-align:right;color:#94A3B8">호스팅(Render), Supabase, Gemini API, 도메인, PG 수수료</td></tr>
+    <tr><td>Marketing Spend</td><td style="text-align:right;color:#94A3B8">인쇄비·광고비 (0원이어도 반드시 기재)</td></tr>
+    <tr><td>Testimonials</td><td style="text-align:right;color:#94A3B8">학부모 후기 원문 (동의 받은 것만)</td></tr>
+  </table></div>
+</div>
+
+<div class="sub" style="margin-top:18px;line-height:1.8">
+※ 이 페이지는 <b>내부 참고용 집계</b>입니다. 제출 시에는 PortOne 정산 내역 등 원본 자료와 대조해 최종 확인하세요.<br>
+※ 후기를 제출할 때는 <b>학부모 동의</b>를 반드시 받으세요(규정 요구사항).
+</div>
+</body></html>`);
+});
+
 app.get('/admin/churn', adminAuth, (req, res) => {
   let rows = [];
   try {
