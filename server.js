@@ -61,13 +61,45 @@ app.use((req, res, next) => {
   next();
 });
 
+/* ===== 화면(HTML)은 절대 캐시하지 않기 =====
+   앱 파일을 새로 올려도 브라우저가 예전 파일을 계속 보여주는 문제를 막습니다.
+   HTML만 대상이라 이미지·폰트는 그대로 캐시됩니다. */
+const PAGE_ROUTES = ['/', '/app', '/guide', '/premium', '/terms', '/privacy', '/youth', '/subscribe', '/paytest', '/admin'];
+app.use((req, res, next) => {
+  const p = req.path || '';
+  const isPage = PAGE_ROUTES.indexOf(p) >= 0 || /\.html$/i.test(p);
+  if (isPage) {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+  }
+  next();
+});
+
+/* 배포 확인용 — simjios.com/version 으로 지금 서버에 올라간 앱 파일을 확인 */
+app.get('/version', (req, res) => {
+  const files = ['SIMJI_OS_clean_v1.html', 'SimjiOs_home.html', 'subscribe.html', 'SimjiOs_admin.html'];
+  const out = {};
+  files.forEach(function (fn) {
+    try {
+      const st = fs.statSync(path.join(__dirname, fn));
+      out[fn] = { updated: new Date(st.mtime).toISOString(), bytes: st.size };
+    } catch (e) { out[fn] = null; }
+  });
+  res.set('Cache-Control', 'no-store');
+  res.json({ serverStarted: new Date(BOOT_TIME).toISOString(), files: out });
+});
+const BOOT_TIME = Date.now();
+
 /* ===== 정적 파일 서빙 — 공개해도 되는 파일만 허용(화이트리스트) =====
    기존에는 폴더 전체가 열려 있어 /server.js, /billing-keys.jsonl 같은 파일까지
    외부에서 그대로 내려받을 수 있었습니다. 아래 목록에 없는 확장자는 404로 막습니다. */
 const PUBLIC_EXT = ['.html', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp',
                     '.woff', '.woff2', '.ttf', '.mp3', '.mp4', '.webmanifest', '.txt'];
 const PUBLIC_FILES = ['/manifest.json'];               // 이름을 콕 집어 허용하는 예외
-const BLOCKED_NAMES = ['/server.js', '/package.json', '/package-lock.json'];
+const BLOCKED_NAMES = ['/server.js', '/package.json', '/package-lock.json',
+                       '/simji_os_v36.html',      // 옛 프로토타입 — 직접 접근 차단
+                       '/simjios_admin.html'];    // 관리자 화면은 /admin(인증) 으로만
 app.use((req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   let p;
@@ -94,7 +126,10 @@ app.use(express.static(__dirname, { dotfiles: 'deny', index: false }));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'SimjiOs_home.html')));
 app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'SIMJI_OS_clean_v1.html')));
 app.get('/guide', (req, res) => res.sendFile(path.join(__dirname, 'SimjiOs_guide.html')));
-app.get('/premium', (req, res) => res.sendFile(path.join(__dirname, 'SIMJI_OS_v36.html')));
+/* /premium(옛 프로토타입 v36) 폐쇄 — 현재 제품과 내용이 다르고 내부 지시문이 노출되어 있어 닫습니다.
+   다시 열려면 아래 주석을 해제하고 BLOCKED_NAMES에서 파일명을 빼세요. */
+// app.get('/premium', (req, res) => res.sendFile(path.join(__dirname, 'SIMJI_OS_v36.html')));
+app.get('/premium', (req, res) => res.redirect(302, '/app'));
 app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
 app.get('/youth', (req, res) => res.sendFile(path.join(__dirname, 'youth.html')));
@@ -545,7 +580,10 @@ function aiCallStats() {
   return { total: rows.length, today: rows.filter(function (r) { return r.date === today; }).length, byMonth: byMonth };
 }
 
-app.post('/ai', async (req, res) => {
+/* 옛 /ai 통로 폐쇄 — 임의의 지시문을 실행할 수 있던 창구였고, 마지막 사용처(v36)를 닫아 더는 필요 없습니다.
+   앱은 /ai/task(정해진 6가지 작업)만 사용합니다. */
+app.post('/ai', (req, res) => res.status(410).json({ error: 'gone', message: '이 통로는 닫혔습니다. /ai/task 를 사용하세요.' }));
+app.post('/ai_disabled', async (req, res) => {
   const provider = aiProvider();
   if (!provider) return res.status(503).json({ error: 'AI not configured (GEMINI/VERTEX/ANTHROPIC 미설정)' });
   if (typeof fetch === 'undefined') return res.status(500).json({ error: 'Node 18+ 필요(fetch 없음)' });
@@ -612,7 +650,15 @@ const PORTONE_PRICE = { early: 5500, regular: 9900 };
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/,'');
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const SB_ON = !!(SUPABASE_URL && SUPABASE_KEY);
-const TRIAL_DAYS = 14;
+/* 무료 체험 기간.
+   ※ 2026-07-26 이전에 가입한 분들은 약속대로 14일을 그대로 보장합니다(소급 불이익 금지). */
+const TRIAL_DAYS = 7;                       // 신규 가입자
+const TRIAL_DAYS_LEGACY = 14;               // 정책 변경 전 가입자
+const TRIAL_POLICY_DATE = '2026-07-26';     // 이 날짜부터 7일 적용
+function trialDaysFor(trialStart){
+  if(!trialStart) return TRIAL_DAYS;
+  return (String(trialStart).slice(0,10) < TRIAL_POLICY_DATE) ? TRIAL_DAYS_LEGACY : TRIAL_DAYS;
+}
 console.log(SB_ON ? '🗄️  Supabase 연결됨' : '⚠️  Supabase 미설정(임시 동작)');
 function sbHeaders(extra){
   return Object.assign({ 'apikey': SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY, 'Content-Type':'application/json' }, extra||{});
@@ -645,7 +691,7 @@ function isSubscriberEmail(email){
 function trialLeft(trialStart){
   if(!trialStart) return 0;
   var days = Math.floor((Date.now() - new Date(trialStart).getTime()) / 86400000);
-  return Math.max(0, TRIAL_DAYS - days);
+  return Math.max(0, trialDaysFor(trialStart) - days);
 }
 
 async function portoneCharge(rec){
@@ -702,19 +748,19 @@ app.post('/member/login', async (req, res) => {
   if(!/\S+@\S+\.\S+/.test(email)) return res.json({ ok:false, message:'이메일 형식이 올바르지 않아요.' });
   const subscriber = isSubscriberEmail(email);
   if(!SB_ON){
-    return res.json({ ok:true, status: subscriber?'active':'trial', trialDaysLeft: TRIAL_DAYS, childName:null, note:'no-store' });
+    return res.json({ ok:true, status: subscriber?'active':'trial', trialDaysLeft: TRIAL_DAYS, trialDaysTotal: TRIAL_DAYS, childName:null, note:'no-store' });
   }
   let m = await sbGetMember(email);
   if(!m){
     m = await sbUpsertMember({ email: email, phone: phone||null, status: subscriber?'active':'trial', trial_start: new Date().toISOString() });
-    return res.json({ ok:true, isNew:true, status: subscriber?'active':'trial', trialDaysLeft: TRIAL_DAYS,
+    return res.json({ ok:true, isNew:true, status: subscriber?'active':'trial', trialDaysLeft: TRIAL_DAYS, trialDaysTotal: TRIAL_DAYS,
       childName:(m&&m.child_name)||null, childGrade:(m&&m.child_grade)||null, childBand:(m&&m.child_band)||null });
   }
   if(phone && !m.phone){ sbUpsertMember({ email:email, phone:phone }).catch(function(){}); }  // 번호 없던 회원이면 채움
   let status;
   if(subscriber || m.status==='active'){ status='active'; if(m.status!=='active') sbUpsertMember({ email:email, status:'active' }).catch(function(){}); }
   else { status = trialLeft(m.trial_start) > 0 ? 'trial' : 'expired'; }
-  return res.json({ ok:true, status: status, trialDaysLeft: trialLeft(m.trial_start),
+  return res.json({ ok:true, status: status, trialDaysLeft: trialLeft(m.trial_start), trialDaysTotal: trialDaysFor(m.trial_start),
     childName: m.child_name||null, childGrade: m.child_grade||null, childBand: m.child_band||null });
 });
 
