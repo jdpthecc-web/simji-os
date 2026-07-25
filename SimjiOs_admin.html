@@ -38,6 +38,14 @@ tr:last-child td{border-bottom:none}
 .dec .why{color:var(--muted);font-size:12px;margin-top:4px;line-height:1.6}
 .empty{color:var(--muted);font-size:13px;background:#fff;border:1px dashed var(--line);border-radius:12px;padding:16px}
 .foot{font-size:11px;color:var(--muted);margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
+.xp{display:block;text-decoration:none;color:inherit;background:linear-gradient(135deg,#12304F,#0F766E);border-radius:14px;padding:16px 18px;margin:14px 0 4px;box-shadow:0 2px 10px rgba(18,48,79,.18)}
+.xp:hover{filter:brightness(1.07)}
+.xp-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.xp-title{color:#fff;font-weight:700;font-size:16px}
+.xp-dday{background:#FFD980;color:#5A3E00;font-weight:700;font-size:13px;border-radius:999px;padding:4px 12px;white-space:nowrap}
+.xp-nums{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;color:#CFF3E6;font-size:13px}
+.xp-nums b{color:#fff;font-size:15px}
+@media(max-width:640px){ .xp-nums{gap:10px;font-size:12px} }
 @media(max-width:640px){ .card{min-width:44%} table{font-size:12px} th,td{padding:8px} }
 </style>
 </head>
@@ -50,6 +58,16 @@ tr:last-child td{border-bottom:none}
     </div>
     <button class="btn" onclick="load()">↻ 새로고침</button>
   </div>
+
+  <a class="xp" id="xp-bar" href="/admin/xprize">
+    <div class="xp-head">
+      <span class="xp-title">🏆 XPRIZE 증빙 대시보드 열기</span>
+      <span class="xp-dday" id="xp-dday">D-—</span>
+    </div>
+    <div class="xp-nums" id="xp-nums">
+      <span>불러오는 중…</span>
+    </div>
+  </a>
 
   <div class="cards" id="cards"></div>
   <div class="banner" id="banner">⚠ 오늘 안전 신호가 있습니다 — 해당 아동을 우선 확인하세요 (아래 표 ⚠ 표시)</div>
@@ -102,24 +120,25 @@ const SAMPLE = {
       { agent:'weekly_report', decision:'보류', reason:'하루 한 가지로 집중(우선순위 낮음)' } ] }
   ]
 };
-function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/`/g,'&#96;'); }
+function num(v){ var n=Number(v); return isFinite(n)? n.toLocaleString() : '0'; }
 function card(t,v,hot){ return '<div class="card'+(hot?' hot':'')+'"><div class="t">'+t+'</div><div class="v">'+v+'</div></div>'; }
 function render(d, isSample){
   document.getElementById('date').textContent = d.today || '—';
   document.getElementById('badge').style.display = isSample ? 'inline-block' : 'none';
   document.getElementById('cards').innerHTML =
-    card('전체 아동', d.totalKids||0)
-    + card('오늘 활동 아동', d.todayActive||0)
-    + card('오늘 이벤트', d.todayEvents||0)
-    + card('안전 신호 (오늘/전체)', (d.safetyToday||0)+' / '+(d.safetyTotal||0), (d.safetyToday||0)>0);
+    card('전체 아동', num(d.totalKids))
+    + card('오늘 활동 아동', num(d.todayActive))
+    + card('오늘 이벤트', num(d.todayEvents))
+    + card('안전 신호 (오늘/전체)', num(d.safetyToday)+' / '+num(d.safetyTotal), (d.safetyToday||0)>0);
   document.getElementById('banner').style.display = (d.safetyToday||0)>0 ? 'block' : 'none';
   const tc = d.typeCount||{};
   document.getElementById('types').innerHTML = Object.keys(tc).length
-    ? Object.keys(tc).map(function(t){ return '<div class="chip">'+esc(t)+' <b>'+tc[t]+'</b></div>'; }).join('')
+    ? Object.keys(tc).map(function(t){ return '<div class="chip">'+esc(t)+' <b>'+num(tc[t])+'</b></div>'; }).join('')
     : '<div class="empty">최근 7일 이벤트가 없습니다.</div>';
   const kids = d.kids||[];
   document.getElementById('kids').innerHTML = kids.length
-    ? kids.map(function(k){ return '<tr><td><b>'+esc(k.id)+'</b></td><td>'+(k.days||0)+'</td><td>'+esc(k.last||'-')+'</td><td>'+(k.todayCnt||0)+'</td><td>'+(k.safety?'<span class="warn">⚠ '+k.safety+'</span>':'-')+'</td></tr>'; }).join('')
+    ? kids.map(function(k){ return '<tr><td><b>'+esc(k.id)+'</b></td><td>'+num(k.days)+'</td><td>'+esc(k.last||'-')+'</td><td>'+num(k.todayCnt)+'</td><td>'+(k.safety?'<span class="warn">⚠ '+num(k.safety)+'</span>':'-')+'</td></tr>'; }).join('')
     : '<tr><td colspan="5" style="color:var(--muted)">아직 데이터가 없습니다.</td></tr>';
   const dec = d.decisions||[];
   document.getElementById('decisions').innerHTML = dec.length
@@ -133,7 +152,7 @@ async function load(){
     render(await r.json(), false);
   }catch(e){ render(SAMPLE, true); }
 }
-function statusKo(s){ return s==='active'?'구독중':(s==='trial'?'체험중':(s==='expired'?'만료':s)); }
+function statusKo(s){ return s==='active'?'구독중':(s==='trial'?'체험중':(s==='expired'?'만료':'기타')); }
 function statusColor(s){ return s==='active'?'#2F9E83':(s==='trial'?'#BA7517':'#B04632'); }
 async function loadMembers(){
   try{
@@ -142,13 +161,13 @@ async function loadMembers(){
     if(!d || !d.configured){ document.getElementById('members').innerHTML='<tr><td colspan="7" style="color:var(--muted)">Supabase 미연결</td></tr>'; return; }
     const s = d.summary||{};
     document.getElementById('msum').innerHTML =
-      '<div class="chip">전체 <b>'+(s.total||0)+'</b></div>'
-      + '<div class="chip">구독중 <b>'+(s.active||0)+'</b></div>'
-      + '<div class="chip">체험중 <b>'+(s.trial||0)+'</b></div>'
-      + '<div class="chip">만료 <b>'+(s.expired||0)+'</b></div>';
+      '<div class="chip">전체 <b>'+num(s.total)+'</b></div>'
+      + '<div class="chip">구독중 <b>'+num(s.active)+'</b></div>'
+      + '<div class="chip">체험중 <b>'+num(s.trial)+'</b></div>'
+      + '<div class="chip">만료 <b>'+num(s.expired)+'</b></div>';
     const ms = d.members||[];
     document.getElementById('members').innerHTML = ms.length
-      ? ms.map(function(m){ return '<tr><td><b>'+esc(m.email)+'</b></td><td>'+esc(m.childName||'-')+'</td><td>'+esc(m.childGrade||'-')+'</td><td>'+esc(m.phone||'-')+'</td><td><b style="color:'+statusColor(m.status)+'">'+statusKo(m.status)+'</b></td><td>'+esc(m.trialStart||'-')+'</td><td>'+(m.status==='trial'?(m.trialLeft+'일'):'-')+'</td></tr>'; }).join('')
+      ? ms.map(function(m){ return '<tr><td><b>'+esc(m.email)+'</b></td><td>'+esc(m.childName||'-')+'</td><td>'+esc(m.childGrade||'-')+'</td><td>'+esc(m.phone||'-')+'</td><td><b style="color:'+statusColor(m.status)+'">'+statusKo(m.status)+'</b></td><td>'+esc(m.trialStart||'-')+'</td><td>'+(m.status==='trial'?(num(m.trialLeft)+'일'):'-')+'</td></tr>'; }).join('')
       : '<tr><td colspan="7" style="color:var(--muted)">아직 회원이 없습니다.</td></tr>';
   }catch(e){ document.getElementById('members').innerHTML='<tr><td colspan="7" style="color:var(--muted)">불러오기 실패</td></tr>'; }
 }
@@ -160,13 +179,13 @@ async function loadSubs(){
     const d = await r.json();
     const subs = d.subscribers||[];
     document.getElementById('bsum').innerHTML =
-      '<div class="chip">전체 <b>'+(d.count||0)+'</b></div><div class="chip">활성 <b>'+(d.active||0)+'</b></div>';
+      '<div class="chip">전체 <b>'+num(d.count)+'</b></div><div class="chip">활성 <b>'+num(d.active)+'</b></div>';
     document.getElementById('subs').innerHTML = subs.length
       ? subs.map(function(s){
           var canceled = s.status!=='active';
           var btn = canceled ? '<button onclick="reactivateSub(\''+esc(s.customerKey)+'\')" style="background:#2F9E83;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer">재활성</button>'
             : '<button onclick="cancelSub(\''+esc(s.customerKey)+'\')" style="background:#B04632;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer">해지</button>';
-          return '<tr><td><b>'+esc(s.email||'-')+'</b></td><td>'+esc(s.phone||'-')+'</td><td>'+esc(s.plan||'-')+'</td><td>'+((s.amount||0).toLocaleString())+'원</td><td>'+esc(s.cardCompany||'')+' '+esc(s.last4||'')+'</td><td>'+esc((s.nextBilling||'').slice(0,10)||'-')+'</td><td><b style="color:'+(canceled?'#B04632':'#2F9E83')+'">'+(canceled?'해지':'활성')+'</b></td><td>'+btn+'</td></tr>';
+          return '<tr><td><b>'+esc(s.email||'-')+'</b></td><td>'+esc(s.phone||'-')+'</td><td>'+esc(s.plan||'-')+'</td><td>'+num(s.amount)+'원</td><td>'+esc(s.cardCompany||'')+' '+esc(s.last4||'')+'</td><td>'+esc((s.nextBilling||'').slice(0,10)||'-')+'</td><td><b style="color:'+(canceled?'#B04632':'#2F9E83')+'">'+(canceled?'해지':'활성')+'</b></td><td>'+btn+'</td></tr>';
         }).join('')
       : '<tr><td colspan="8" style="color:var(--muted)">아직 결제 구독자가 없습니다.</td></tr>';
   }catch(e){ document.getElementById('subs').innerHTML='<tr><td colspan="8" style="color:var(--muted)">불러오기 실패</td></tr>'; }
@@ -190,6 +209,24 @@ async function reactivateSub(ck){
   }catch(e){ alert('재활성 요청 실패'); }
 }
 loadSubs();
+async function loadXprize(){
+  try{
+    const r = await fetch('/admin/xprize.json', { cache:'no-store' });
+    if(!r.ok) throw 0;
+    const d = await r.json();
+    document.getElementById('xp-dday').textContent = 'D-' + num(d.dday) + ' · 마감 ' + esc(d.deadline||'');
+    document.getElementById('xp-nums').innerHTML =
+      '<span>누적 매출 <b>' + num(d.revenueTotal) + '원</b></span>'
+      + '<span>이번 달 <b>' + num(d.revenueThisMonth) + '원</b></span>'
+      + '<span>MRR <b>' + num(d.mrr) + '원</b></span>'
+      + '<span>활성 구독 <b>' + num(d.activeSubs) + '가정</b></span>'
+      + '<span>AI 호출 <b>' + num(d.aiCallsTotal) + '회</b></span>'
+      + '<span>독서 기록 <b>' + num(d.readingEvents) + '건</b></span>';
+  }catch(e){
+    document.getElementById('xp-nums').innerHTML = '<span>집계를 불러오지 못했습니다 — 눌러서 증빙 화면을 직접 확인하세요.</span>';
+  }
+}
+loadXprize();
 </script>
 </body>
 </html>

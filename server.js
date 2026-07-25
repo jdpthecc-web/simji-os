@@ -12,15 +12,84 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const app = express();
-app.use(express.json());
+app.set('trust proxy', 1);            // Render 프록시 뒤 — 실제 방문자 IP를 인식(속도제한이 제대로 작동)
+app.use(express.json({ limit: '64kb' }));  // 과대 요청 차단
+
+/* ===== 공용 속도제한(IP 기준) =====
+   rateLimit('이름', 창시간ms, 허용횟수) → true면 통과, false면 초과 */
+const _rlHits = {};
+function rateLimit(bucket, windowMs, max, ip) {
+  const key = bucket + '|' + (ip || 'x');
+  const now = Date.now();
+  const arr = (_rlHits[key] || []).filter(function (t) { return now - t < windowMs; });
+  arr.push(now);
+  _rlHits[key] = arr;
+  return arr.length <= max;
+}
+setInterval(function () {   // 메모리 누적 방지 — 오래된 기록 정리
+  const now = Date.now();
+  Object.keys(_rlHits).forEach(function (k) {
+    _rlHits[k] = _rlHits[k].filter(function (t) { return now - t < 3600000; });
+    if (!_rlHits[k].length) delete _rlHits[k];
+  });
+}, 600000).unref();
+
+/* 우리 사이트에서 온 요청인지 확인(외부 스크립트의 무단 호출 차단) */
+function sameSite(req) {
+  const o = req.headers.origin || req.headers.referer || '';
+  if (!o) return false;
+  try {
+    const h = new URL(o).hostname;
+    return h === 'simjios.com' || h === 'www.simjios.com' || h === 'localhost' || /\.onrender\.com$/.test(h);
+  } catch (e) { return false; }
+}
 
 // 결제는 포트원(PortOne V2)→KPN 경로만 사용합니다. (토스 잔재 제거)
 const DATA_DIR = fs.existsSync('/var/data') ? '/var/data' : __dirname; // 영구 디스크
 const METRICS_FILE = path.join(DATA_DIR, 'metrics.jsonl');
 const PORT = process.env.PORT || 3000;
 
+/* ===== 보안 헤더 ===== */
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');           // MIME 스니핑 차단
+  res.set('X-Frame-Options', 'SAMEORIGIN');               // 클릭재킹 방지(다른 사이트가 우리 화면을 iframe으로 못 씀)
+  res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.set('Permissions-Policy', 'geolocation=(), camera=(), payment=(self)');
+  res.set('Cross-Origin-Opener-Policy', 'same-origin');
+  // 관리자 화면은 검색엔진 색인 금지
+  if (req.path.indexOf('/admin') === 0) res.set('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
+
+/* ===== 정적 파일 서빙 — 공개해도 되는 파일만 허용(화이트리스트) =====
+   기존에는 폴더 전체가 열려 있어 /server.js, /billing-keys.jsonl 같은 파일까지
+   외부에서 그대로 내려받을 수 있었습니다. 아래 목록에 없는 확장자는 404로 막습니다. */
+const PUBLIC_EXT = ['.html', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp',
+                    '.woff', '.woff2', '.ttf', '.mp3', '.mp4', '.webmanifest', '.txt'];
+const PUBLIC_FILES = ['/manifest.json'];               // 이름을 콕 집어 허용하는 예외
+const BLOCKED_NAMES = ['/server.js', '/package.json', '/package-lock.json'];
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  let p;
+  try { p = decodeURIComponent(req.path || ''); } catch (e) { return res.status(400).send('Bad request'); }
+  if (p.indexOf('\0') >= 0) return res.status(400).send('Bad request');
+  const low = p.toLowerCase();
+  if (low.indexOf('.') === -1) return next();                 // 확장자 없는 경로 → 라우트가 처리
+  if (BLOCKED_NAMES.indexOf(low) >= 0) return res.status(404).send('Not found');
+  // 실제로 이 폴더에 존재하는 파일일 때만 판정한다(= /admin/dashboard.json 같은 라우트는 건드리지 않음)
+  const abs = path.resolve(__dirname, '.' + p);
+  if (abs.indexOf(path.resolve(__dirname)) !== 0) return res.status(404).send('Not found'); // 경로 탈출 차단
+  let isFile = false;
+  try { isFile = fs.existsSync(abs) && fs.statSync(abs).isFile(); } catch (e) { isFile = false; }
+  if (!isFile) return next();
+  if (PUBLIC_FILES.indexOf(low) >= 0) return next();
+  const dot = low.lastIndexOf('.');
+  const ext = dot >= 0 ? low.slice(dot) : '';
+  if (PUBLIC_EXT.indexOf(ext) >= 0) return next();
+  return res.status(404).send('Not found');                   // .js .json .jsonl .env .md 등 차단
+});
 // 같은 폴더의 앱 파일 서빙
-app.use(express.static(__dirname));
+app.use(express.static(__dirname, { dotfiles: 'deny', index: false }));
 // 페이지 라우트 — 홈(랜딩) / 앱 / 약관 3종
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'SimjiOs_home.html')));
 app.get('/app', (req, res) => res.sendFile(path.join(__dirname, 'SIMJI_OS_clean_v1.html')));
@@ -45,12 +114,14 @@ app.get('/admin', adminAuth, (req, res) => res.sendFile(path.join(__dirname, 'Si
 const FB_FILE = path.join(DATA_DIR, 'feedback.jsonl');
 
 app.post('/feedback', (req, res) => {
+  if (!rateLimit('feedback', 600000, 10, req.ip)) return res.status(429).json({ ok:false, message:'잠시 후 다시 시도해 주세요.' });
   const b = req.body || {};
+  const cut = function (v, n) { return String(v == null ? '' : v).slice(0, n); };
   const rec = {
     ts: new Date().toISOString(),
-    event: b.event || '', child: b.child || '',
-    pay: b.pay || '', price: b.price || '', liked: b.liked || '',
-    comment: b.comment || '', contact: b.contact || ''
+    event: cut(b.event, 60), child: cut(b.child, 40),
+    pay: cut(b.pay, 40), price: cut(b.price, 40), liked: cut(b.liked, 200),
+    comment: cut(b.comment, 1000), contact: cut(b.contact, 120)
   };
   try { fs.appendFileSync(FB_FILE, JSON.stringify(rec) + '\n'); }
   catch (e) { console.error('feedback write error:', e); }
@@ -59,17 +130,51 @@ app.post('/feedback', (req, res) => {
 });
 
 /**
- * 관리자 인증(HTTP Basic). 기본값 jd / simji0620.
- * 배포 시 환경변수 ADMIN_USER, ADMIN_PASS 로 반드시 변경하세요.
+ * 관리자 인증(HTTP Basic).
+ * ⚠ 아이디·비밀번호는 소스에 두지 않습니다. 반드시 환경변수로만 설정하세요.
+ *    Render → Environment → ADMIN_USER, ADMIN_PASS
+ *    (미설정 시 관리자 화면은 아예 열리지 않습니다 — 열린 채로 두는 것보다 안전)
  */
+function safeEqual(a, b) {
+  const A = Buffer.from(String(a || ''), 'utf8');
+  const B = Buffer.from(String(b || ''), 'utf8');
+  if (A.length !== B.length) return false;
+  try { return crypto.timingSafeEqual(A, B); } catch (e) { return false; }
+}
+/* 관리자 로그인 실패 추적 — 무차별 대입(비밀번호 반복 시도) 차단 */
+const _adminFails = {};
+function adminFailCount(ip) {
+  const now = Date.now();
+  const arr = (_adminFails[ip] || []).filter(function (t) { return now - t < 600000; });
+  _adminFails[ip] = arr;
+  return arr.length;
+}
+function adminFailAdd(ip) { adminFailCount(ip); _adminFails[ip].push(Date.now()); }
 function adminAuth(req, res, next) {
-  const USER = process.env.ADMIN_USER || 'jd';
-  const PASS = process.env.ADMIN_PASS || 'simji0620';
+  const USER = process.env.ADMIN_USER || '';
+  const PASS = process.env.ADMIN_PASS || '';
+  if (!USER || !PASS) {
+    console.error('🚫 ADMIN_USER / ADMIN_PASS 환경변수가 없습니다 — 관리자 화면을 잠급니다.');
+    return res.status(503).send('관리자 계정이 설정되지 않았습니다. (운영자: Render 환경변수 ADMIN_USER / ADMIN_PASS 설정 필요)');
+  }
+  const ip = req.ip || 'x';
+  if (adminFailCount(ip) >= 10) {
+    console.error('🚨 관리자 로그인 반복 실패 — 일시 차단:', ip);
+    return res.status(429).send('로그인 시도가 너무 많습니다. 10분 후 다시 시도하세요.');
+  }
   const hdr = req.headers.authorization || '';
-  const [type, creds] = hdr.split(' ');
+  const sp = hdr.indexOf(' ');
+  const type = sp > 0 ? hdr.slice(0, sp) : '';
+  const creds = sp > 0 ? hdr.slice(sp + 1) : '';
   if (type === 'Basic' && creds) {
-    const [u, p] = Buffer.from(creds, 'base64').toString().split(':');
-    if (u === USER && p === PASS) return next();
+    const decoded = Buffer.from(creds, 'base64').toString();
+    const i = decoded.indexOf(':');
+    const u = i >= 0 ? decoded.slice(0, i) : '';
+    const p = i >= 0 ? decoded.slice(i + 1) : '';
+    // 두 값 모두 비교해야 타이밍 정보가 새지 않음(단축평가 금지)
+    const okU = safeEqual(u, USER), okP = safeEqual(p, PASS);
+    if (okU && okP) { delete _adminFails[ip]; return next(); }
+    adminFailAdd(ip);   // 실패 1회 기록
   }
   res.set('WWW-Authenticate', 'Basic realm="SIMJI admin"');
   return res.status(401).send('인증이 필요합니다. (관리자 전용)');
@@ -122,6 +227,7 @@ app.get('/admin/xprize', adminAuth, (req, res) => {
     fbCount = fbRaw.split('\n').filter(Boolean).length;
   } catch (e) {}
 
+  const aiStats = aiCallStats();
   const usd = v => '$' + (v / USD).toFixed(2);
   const won = v => v.toLocaleString('ko-KR') + '원';
 
@@ -170,6 +276,7 @@ td,th{padding:8px 6px;border-bottom:1px solid #E2E8F0}th{text-align:left;color:#
     <tr><td>누적 읽은 쪽수</td><td style="text-align:right"><b>${totalPages.toLocaleString('ko-KR')}쪽</b> (${(totalPages*5/1000).toFixed(1)}km)</td></tr>
     <tr><td>아이가 문장을 남긴 횟수</td><td style="text-align:right"><b>${withRecon}건</b></td></tr>
     <tr><td>Gemini 질문 생성 횟수</td><td style="text-align:right"><b>${aiQuestions}건</b></td></tr>
+    <tr><td>AI 호출 총 횟수 (서버 로그 기준)</td><td style="text-align:right"><b>${aiStats.total.toLocaleString('ko-KR')}회</b> · 오늘 ${aiStats.today}회</td></tr>
   </table>
   <div class="sub" style="margin-top:10px">※ Gemini API가 아이가 쓴 문장을 읽고 열린 질문을 생성합니다. 프로덕션에서 매일 실행되는 AI 기능입니다.</div>
 </div>
@@ -189,6 +296,40 @@ td,th{padding:8px 6px;border-bottom:1px solid #E2E8F0}th{text-align:left;color:#
 ※ 후기를 제출할 때는 <b>학부모 동의</b>를 반드시 받으세요(규정 요구사항).
 </div>
 </body></html>`);
+});
+
+/* XPRIZE 요약(JSON) — 관리자 대시보드 상단 바가 호출 */
+app.get('/admin/xprize.json', adminAuth, (req, res) => {
+  let rows = [];
+  try {
+    const raw = fs.existsSync(METRICS_FILE) ? fs.readFileSync(METRICS_FILE, 'utf8') : '';
+    rows = raw.split('\n').filter(Boolean).map(function (l) { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
+  } catch (e) {}
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  let totalKrw = 0, monthKrw = 0, payCount = 0;
+  rows.filter(function (r) { return r.type === 'subscription' && r.status === 'active' && Number(r.amount) > 0; })
+      .forEach(function (r) {
+        const amt = Number(r.amount);
+        const m = new Date(r.ts || Date.now()).toISOString().slice(0, 7);
+        totalKrw += amt; payCount++;
+        if (m === thisMonth) monthKrw += amt;
+      });
+  const keys = Object.keys(billingMap);
+  const activeSubs = keys.filter(function (k) { return billingMap[k].status === 'active'; });
+  const mrr = activeSubs.reduce(function (a, k) { return a + (Number(billingMap[k].amount) || 0); }, 0);
+  const ai = aiCallStats();
+  const deadline = Date.parse('2026-08-17T23:59:59Z');
+  const dday = Math.max(0, Math.ceil((deadline - Date.now()) / 86400000));
+  res.json({
+    dday: dday, deadline: '2026-08-17',
+    revenueTotal: totalKrw, revenueThisMonth: monthKrw, payCount: payCount,
+    activeSubs: activeSubs.length, canceled: keys.length - activeSubs.length, mrr: mrr,
+    aiCallsTotal: ai.total, aiCallsToday: ai.today,
+    readingEvents: rows.filter(function (r) { return r.type === 'reading'; }).length,
+    uniqUsers: Object.keys(rows.filter(function (r) { return r.childId; })
+                  .reduce(function (o, r) { o[r.childId] = 1; return o; }, {})).length,
+    generatedAt: new Date().toISOString()
+  });
 });
 
 app.get('/admin/churn', adminAuth, (req, res) => {
@@ -386,14 +527,47 @@ app.get('/ai/status', (req, res) => {
   const provider = aiProvider();
   res.json({ enabled: !!provider, provider: provider || null });
 });
+/* AI 호출 로그 — XPRIZE "AI-Native" 증빙용. 개인정보·대화 내용은 저장하지 않고 횟수만 남깁니다. */
+const AI_LOG = path.join(DATA_DIR, 'ai_calls.jsonl');
+function logAiCall(provider, where) {
+  try { fs.appendFileSync(AI_LOG, JSON.stringify({ ts: Date.now(), date: new Date().toISOString().slice(0, 10), provider: provider || '', where: where || '' }) + '\n'); }
+  catch (e) {}
+}
+function aiCallStats() {
+  let rows = [];
+  try {
+    const raw = fs.existsSync(AI_LOG) ? fs.readFileSync(AI_LOG, 'utf8') : '';
+    rows = raw.split('\n').filter(Boolean).map(function (l) { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
+  } catch (e) {}
+  const today = new Date().toISOString().slice(0, 10);
+  const byMonth = {};
+  rows.forEach(function (r) { const m = String(r.date || '').slice(0, 7); if (m) byMonth[m] = (byMonth[m] || 0) + 1; });
+  return { total: rows.length, today: rows.filter(function (r) { return r.date === today; }).length, byMonth: byMonth };
+}
+
 app.post('/ai', async (req, res) => {
   const provider = aiProvider();
   if (!provider) return res.status(503).json({ error: 'AI not configured (GEMINI/VERTEX/ANTHROPIC 미설정)' });
   if (typeof fetch === 'undefined') return res.status(500).json({ error: 'Node 18+ 필요(fetch 없음)' });
+
+  /* ⚠ 이 엔드포인트는 우리 API 키로 AI를 호출합니다.
+     예전에는 누구나 아무 내용이나 보낼 수 있어(무료 AI 중계기) 요금 폭탄·증빙 오염 위험이 있었습니다.
+     ① 우리 사이트에서 온 요청만 ② IP당 5분 40회 ③ 요청 크기·토큰 상한 — 세 겹으로 막습니다. */
+  if (!sameSite(req)) return res.status(403).json({ error: 'forbidden' });
+  if (!rateLimit('ai', 300000, 40, req.ip)) return res.status(429).json({ error: '요청이 잠시 몰렸어요. 잠시 후 다시 시도해 주세요.' });
+
+  const b = req.body || {};
+  const sysLen = String(b.system || '').length;
+  const msgLen = JSON.stringify(b.messages || []).length;
+  if (sysLen > 8000 || msgLen > 8000) return res.status(413).json({ error: '요청이 너무 큽니다.' });
+  b.max_tokens = Math.min(Number(b.max_tokens) || 800, 1000);   // 토큰 상한 강제
+  req.body = b;
+
   try {
     if (provider === 'gemini' || provider === 'vertex') {
       const out = await callGenAI(toGemini(req.body || {}));
       if (!out.ok) return res.status(out.status || 500).json({ error: provider, detail: out.raw });
+      logAiCall(provider, 'app');
       return res.json({ content: [{ type: 'text', text: extractGenText(out.raw) }], _provider: provider, model: GEMINI_MODEL });
     }
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -402,6 +576,7 @@ app.post('/ai', async (req, res) => {
       body: JSON.stringify(req.body || {})
     });
     const data = await r.json();
+    if (r.ok) logAiCall('anthropic', 'app');
     res.status(r.status).json(data);
   } catch (e) {
     console.error('AI proxy error:', e);
@@ -488,8 +663,10 @@ async function portoneCharge(rec){
 }
 // 빌키 발급 결과 저장 — 프론트가 requestIssueBillingKey 성공 후 호출(공개)
 app.post('/billing/portone-issue', async (req, res) => {
+  // ※ 결제 경로는 절대 막히면 안 되므로 출처 검사는 걸지 않고 속도제한만 둡니다.
+  if (!rateLimit('issue', 600000, 10, req.ip)) return res.status(429).json({ ok:false, message:'잠시 후 다시 시도해 주세요.' });
   const b = req.body || {};
-  const billingKey = (b.billingKey || '').toString();
+  const billingKey = (b.billingKey || '').toString().slice(0, 200);
   if (!billingKey) return res.json({ ok:false, message:'빌링키가 없습니다.' });
   const plan = (b.plan === 'early') ? 'early' : 'regular';
   if (plan === 'early' && earlyCount() >= EARLY_LIMIT) return res.status(409).json({ ok:false, message:'얼리버드 100가정이 마감되었습니다. 정가로 함께해 주세요.' });
@@ -509,6 +686,7 @@ app.post('/billing/portone-issue', async (req, res) => {
 });
 // 이메일로 구독 상태 확인(공개) — 앱이 기기 변경·앱 재설치와 무관하게 구독을 인식하도록
 app.get('/billing/status', (req, res) => {
+  if (!rateLimit('bstatus', 300000, 30, req.ip)) return res.status(429).json({ active:false });
   const email = (req.query.email || '').toString().trim().toLowerCase();
   if (!email) return res.json({ active: false });
   const active = Object.keys(billingMap).some(function(k){ var r = billingMap[k]; return (r.email||'').toLowerCase() === email && r.status === 'active'; });
@@ -517,6 +695,7 @@ app.get('/billing/status', (req, res) => {
 
 // 이메일 로그인 겸 체험 시작/확인 — 앱 시작 화면이 호출(핵심)
 app.post('/member/login', async (req, res) => {
+  if (!rateLimit('mlogin', 300000, 20, req.ip)) return res.json({ ok:false, message:'잠시 후 다시 시도해 주세요.' });
   const b = req.body||{};
   const email = (b.email || '').toString().trim().toLowerCase();
   const phone = (b.phone || '').toString().replace(/[^0-9]/g,'').slice(0,15);
@@ -541,9 +720,12 @@ app.post('/member/login', async (req, res) => {
 
 // 아이 프로필 저장(온보딩/부모의 이름변경) — 이메일에 묶어 기기 간 동기화
 app.post('/member/profile', async (req, res) => {
+  if (!rateLimit('mprofile', 300000, 20, req.ip)) return res.json({ ok:false, message:'잠시 후 다시 시도해 주세요.' });
   const b = req.body || {};
   const email = (b.email||'').toString().trim().toLowerCase();
   if(!/\S+@\S+\.\S+/.test(email)) return res.json({ ok:false, message:'이메일이 필요해요.' });
+  // 이미 가입된 회원만 수정 가능 — 아무 이메일이나 넣어 새 레코드를 만들지 못하게 함
+  if (SB_ON) { const exist = await sbGetMember(email); if (!exist) return res.json({ ok:false, message:'가입 정보를 찾을 수 없어요.' }); }
   const patch = { email: email };
   if(b.childName!=null)  patch.child_name  = String(b.childName).slice(0,40);
   if(b.childGrade!=null) patch.child_grade = String(b.childGrade).slice(0,20);
@@ -559,6 +741,7 @@ function maskEmail(e){
 }
 // 휴대폰으로 가입 이메일 찾기 — 전체가 아닌 '가린 힌트'로만 반환(공개)
 app.post('/member/find-email', async (req, res) => {
+  if (!rateLimit('findmail', 600000, 8, req.ip)) return res.json({ ok:false, message:'잠시 후 다시 시도해 주세요.' });
   const phone = ((req.body||{}).phone || '').toString().replace(/[^0-9]/g,'').slice(0,15);
   if(phone.length < 10) return res.json({ ok:false, message:'휴대폰 번호를 정확히 입력해 주세요.' });
   if(!SB_ON) return res.json({ ok:false, message:'잠시 후 다시 시도해 주세요.' });
@@ -653,15 +836,51 @@ setTimeout(runBillingCycle, 60000); setInterval(runBillingCycle, 24*60*60*1000);
  * POST /metrics/event  : 앱이 측정 이벤트를 적재(공개). {type:'measurement', childId, date, score, f, r}
  * GET  /metrics        : 집계 KPI 반환(개인정보 없음 · 공개). null이면 데이터 부족.
  */
+/* 앱이 보낼 수 있는 이벤트 종류(화이트리스트).
+   'subscription'은 결제 서버 내부에서만 기록합니다 — 외부에서 가짜 매출을 심을 수 없도록 제외. */
+const ALLOWED_EVENT_TYPES = ['measurement','gratitude','reading','stage_done','full_loop','milestone','fruit',
+  'growth_moment','safety_flag','churn_reason','gap_reason','breathe','gift_open','run_mark','dream',
+  'onboard','parent_view','past_today','grade_update','backup_export'];
 app.post('/metrics/event', (req, res) => {
-  const e = req.body || {};
-  if (!e.type) return res.status(400).json({ message: 'type required' });
-  e.ts = Date.now();
+  const b = req.body || {};
+  const type = String(b.type || '');
+  if (!type) return res.status(400).json({ message: 'type required' });
+  if (ALLOWED_EVENT_TYPES.indexOf(type) < 0) return res.status(400).json({ message: 'unknown type' });
+  if (!rateLimit('metrics', 300000, 120, req.ip)) return res.status(429).json({ message: 'too many' });
+
+  // 필요한 값만 골라서 저장(임의 필드 주입·용량 폭주 차단)
+  // ※ XPRIZE 증빙 집계가 쓰는 필드(pages·hasRecon·gotQ·amount 등)는 반드시 유지해야 합니다.
+  const str = function (v, n) { return v == null ? undefined : String(v).slice(0, n); };
+  const int = function (v, lo, hi) {
+    const x = Number(v);
+    if (!isFinite(x)) return undefined;
+    return Math.max(lo, Math.min(hi, Math.round(x)));
+  };
+  const e = {
+    type: type,
+    date: /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? String(b.date) : new Date().toISOString().slice(0, 10),
+    childId: str(b.childId, 40),
+    // 측정
+    score: int(b.score, 0, 100), f: int(b.f, 0, 100), r: int(b.r, 0, 100),
+    task: int(b.task, 0, 100), sources: str(b.sources, 60),
+    // 읽기(증빙 핵심)
+    hasTitle: int(b.hasTitle, 0, 1), hasRecon: int(b.hasRecon, 0, 1),
+    gotQ: int(b.gotQ, 0, 1), hasAns: int(b.hasAns, 0, 1),
+    pages: int(b.pages, 0, 5000),
+    // 단계·성장
+    stage: str(b.stage, 20), kind: str(b.kind, 40), days: str(b.days, 20),
+    branch: str(b.branch, 10), level: int(b.level, 0, 10), m: int(b.m, 0, 1e9),
+    // 프로필·이탈
+    band: str(b.band, 20), grade: str(b.grade, 20), gender: str(b.gender, 20),
+    reason: str(b.reason, 40), at: str(b.at, 20), gapDays: int(b.gapDays, 0, 9999),
+    ts: Date.now()
+  };
+  Object.keys(e).forEach(function (k) { if (e[k] === undefined) delete e[k]; });
   try { fs.appendFileSync(METRICS_FILE, JSON.stringify(e) + '\n'); }
   catch (err) { return res.status(500).json({ message: 'write error' }); }
   res.json({ ok: true });
 });
-app.get('/metrics', (req, res) => {
+app.get('/metrics', adminAuth, (req, res) => {   // 매출·구독자 수가 담기므로 관리자 전용으로 변경
   const DAY = 864e5, now = Date.now();
   let rows = [];
   try { if (fs.existsSync(METRICS_FILE)) rows = fs.readFileSync(METRICS_FILE, 'utf8').split('\n').filter(Boolean).map(function (l){ try { return JSON.parse(l); } catch(e){ return null; } }).filter(Boolean); } catch (e) {}
@@ -791,6 +1010,7 @@ function assistAllow(ip){ const now=Date.now(); const arr=(assistHits[ip]||[]).f
 app.post('/assist', async (req, res) => {
   const q = ((req.body || {}).question || '').toString().slice(0, 400).trim();
   if (!q) return res.json({ answer: '안녕하세요! 심지OS 도우미예요. 요금·무료 시작·환불·시작 방법 등 무엇이든 물어보세요 🌱' });
+  if (!sameSite(req)) return res.status(403).json({ answer: '잘못된 접근입니다.' });
   if (!assistAllow(req.ip || 'x')) return res.json({ answer: '문의가 잠시 몰렸어요. 잠시 후 다시 시도하시거나, 카카오 채널로 문의해 주세요.' });
   const system = "당신은 '심지OS 도우미'입니다. 아동 마음 성장 앱 심지OS 홈페이지의 안내 도우미예요. 아래 [정보]만 근거로, 부모님께 따뜻하고 간결하게(2~4문장) 한국어로 답하세요. [정보]에 없는 내용은 지어내지 말고 '정확한 안내를 위해 카카오 채널로 문의해 주세요'라고 안내하세요. 의료·법률적 단정은 피하고, 아이의 개인정보를 묻지 마세요.\n\n[정보]\n" + SIMJI_FAQ;
   try {
@@ -800,8 +1020,8 @@ app.post('/assist', async (req, res) => {
 });
 
 /** ===== AI 에이전트 러너 + 실행 로그 (XPRIZE: AI-Native Operations 증빙) ===== */
-const AGENT_LOG = path.join(__dirname, 'agent_log.jsonl');
-const AGENT_STATE = path.join(__dirname, 'agent_state.json');
+const AGENT_LOG = path.join(DATA_DIR, 'agent_log.jsonl');   // 영구디스크로 이동(웹 폴더 밖 = 외부 노출 차단)
+const AGENT_STATE = path.join(DATA_DIR, 'agent_state.json');
 function agentLog(entry) { entry.ts = Date.now(); entry.at = new Date().toISOString(); try { fs.appendFileSync(AGENT_LOG, JSON.stringify(entry) + '\n'); } catch (e) {} return entry; }
 function loadAgentState() { try { return JSON.parse(fs.readFileSync(AGENT_STATE, 'utf8')); } catch (e) { return {}; } }
 function saveAgentState(s) { try { fs.writeFileSync(AGENT_STATE, JSON.stringify(s)); } catch (e) {} }
@@ -817,6 +1037,7 @@ async function aiText(prompt, system, maxTokens) {
       if (system) body.systemInstruction = { parts: [{ text: system }] };
       const out = await callGenAI(body);
       if (!out.ok) return null;
+      logAiCall(provider, 'server');
       return extractGenText(out.raw) || null;
     }
     const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: maxTokens || 300, system: system || undefined, messages: [{ role: 'user', content: prompt }] }) });
@@ -909,7 +1130,7 @@ app.get('/admin/agent-logs', adminAuth, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || '200', 10) || 200, 1000);
   const recent = rows.slice(-limit).reverse();
   if (req.query.html) {
-    const esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); };
+    const esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
     const trs = recent.map(function (r) { return '<tr><td>' + esc(r.at) + '</td><td>' + esc(r.agent) + '</td><td>' + esc(r.action) + '</td><td>' + esc(r.childId || '') + '</td><td>' + esc(r.provider || '') + '</td><td>' + esc((r.output || '').slice(0, 160)) + '</td></tr>'; }).join('');
     return res.send('<!doctype html><meta charset="utf-8"><title>Agent logs</title><style>body{font-family:sans-serif;padding:16px}table{border-collapse:collapse;width:100%;font-size:12px}td,th{border:1px solid #ddd;padding:6px;text-align:left;vertical-align:top}th{background:#1A2E4A;color:#fff}</style><h3>SIMJI OS · Agent execution logs (' + rows.length + ')</h3><table><tr><th>time</th><th>agent</th><th>action</th><th>childId</th><th>provider</th><th>output</th></tr>' + trs + '</table>');
   }
