@@ -1416,13 +1416,31 @@ app.get('/admin/members.json', adminAuth, async (req, res) => {
 });
 app.get('/admin/dashboard', adminAuth, (req, res) => res.sendFile(path.join(__dirname, 'SimjiOs_admin.html')));
 
-app.post('/agents/orchestrate', adminAuth, async (req, res) => {
+/* 오케스트레이터 실행 본체 — 수동 호출과 자동 실행이 같은 코드를 씁니다. */
+async function runOrchestrator(trigger) {
   const state = loadAgentState(); const states = buildOrchestratorStates(); const results = [];
-  for (const cid of Object.keys(states)) { try { results.push(await orchestrateChild(states[cid], state)); } catch (e) { results.push({ child: cid, error: String(e) }); } }
+  for (const cid of Object.keys(states)) {
+    try { results.push(await orchestrateChild(states[cid], state)); }
+    catch (e) { results.push({ child: cid, error: String(e) }); }
+  }
   saveAgentState(state);
-  agentLog({ agent: 'orchestrator', provider: aiProvider(), action: 'run', output: JSON.stringify(results.map(function (r) { return r.child + ':' + (r.chosen || '-'); })) });
-  res.json({ ok: true, children: Object.keys(states).length, results: results, provider: aiProvider(), at: new Date().toISOString() });
+  agentLog({
+    agent: 'orchestrator', provider: aiProvider(), action: 'run',
+    trigger: trigger || 'manual',
+    output: JSON.stringify(results.map(function (r) { return r.child + ':' + (r.chosen || '-'); }))
+  });
+  return { ok: true, children: Object.keys(states).length, results: results, provider: aiProvider(), at: new Date().toISOString() };
+}
+
+app.post('/agents/orchestrate', adminAuth, async (req, res) => {
+  try { res.json(await runOrchestrator('manual')); }
+  catch (e) { res.status(500).json({ ok: false, error: String(e) }); }
 });
+
+/* 매일 자동 실행 — 이게 없으면 오케스트레이터 결정 로그가 쌓이지 않습니다.
+   부팅 2분 뒤 1회, 이후 24시간마다. */
+setTimeout(function () { runOrchestrator('auto-boot').catch(function (e) { console.error('orchestrator boot error:', String(e)); }); }, 120000);
+setInterval(function () { runOrchestrator('auto-daily').catch(function (e) { console.error('orchestrator daily error:', String(e)); }); }, 24 * 60 * 60 * 1000);
 
 // 상태 점검용: 브라우저에서 /health 로 접속하면 Supabase 연결 상태를 확인할 수 있다.
 app.get('/health', async (req, res) => {
