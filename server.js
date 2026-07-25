@@ -1137,6 +1137,115 @@ app.get('/admin/agent-logs', adminAuth, (req, res) => {
   res.json({ total: rows.length, count: recent.length, logs: recent });
 });
 
+/* ===================== AI 작업 레지스트리 (프롬프트 서버 보관) =====================
+   앱(브라우저)은 "무슨 작업인지"와 최소한의 값만 보냅니다.
+   실제 지시문(system/prompt)은 서버에만 있어 소스 보기로 노출되지 않고,
+   외부에서 임의의 지시문을 실행시킬 수도 없습니다. */
+function _s(v, n) { return String(v == null ? '' : v).slice(0, n || 200); }
+function _n(v) { const x = Number(v); return isFinite(x) ? x : null; }
+function _list(v, n, each) {
+  if (!Array.isArray(v)) return [];
+  return v.slice(0, n || 5).map(function (x) { return _s(x, each || 120); }).filter(Boolean);
+}
+
+const AI_TASKS = {
+  /* 1) 腦 — 1분 상태 측정 코치 */
+  brain_coach: {
+    max: 300,
+    system: '너는 아동의 상태 코치다. 1분 측정은 성적이 아니라 "오늘 배움의 문이 열렸는지" 확인하는 것. 따뜻하고 짧게, 비의료(진단·치료 표현 금지), 비교·등수 금지, 점수가 낮아도 자책하게 하지 말 것. 추세가 있으면 부담 주지 말고 부드럽게 반영. 끊겼다 돌아왔으면 그것부터 축하. 항상 아이 편에서, 아이가 진심으로 보살핌받는다고 느끼게 다정하게. 출력은 정확히 두 줄: 1) 한 줄 상태 해석 2) 오늘의 작은 한 걸음. 초등학생도 아는 쉬운 말. 마크다운·영어·괄호 금지, 한국어 평문만.',
+    build: function (v) {
+      const name = _s(v.name, 40), dream = _s(v.dream, 120);
+      return '오늘 상태 지수 ' + (_n(v.idx) || 0) + '점. 사용 신호: ' + _s(v.sources, 40)
+        + '. 집중 ' + (_n(v.focus) || 0) + '/5, 컨디션 ' + (_n(v.energy) || 0) + '/5'
+        + (_n(v.taskScore) != null ? (', 반응속도점수 ' + _n(v.taskScore)) : '')
+        + '. 최근 추세: ' + _s(v.trend, 30) + '.'
+        + (v.returned ? ' 며칠 쉬었다가 오늘 돌아옴.' : '')
+        + (name ? (' 아이 이름: ' + name + ' — 다정하게 이름을 불러줘.') : '')
+        + (dream ? (' 아이의 꿈: ' + dream + ' — 자연스러울 때만 살짝 연결, 강요 금지.') : '')
+        + ' 위 형식대로 두 줄로.';
+    }
+  },
+
+  /* 2) 心 — 마음 연결(아이 공감 + 부모 대화 질문) */
+  heart_connect: {
+    max: 400,
+    system: '너는 아동의 마음 연결 도우미다. 아이의 감사·마음을 안전하게 받아주되 부정 감정을 부추기거나 깊이 캐묻지 말 것. 들여다본다·살펴본다·체크한다 같은 관찰·검사 느낌의 표현은 금지하고, 아이가 나눠준 마음에 고마워하는 말투를 쓸 것. 항상 아이 편에서, 진심으로 보살핌받는다고 느끼게. 비의료·비교 금지. 아이에게 주는 말은 공감 작법을 따를 것: 아이가 적은 구체적 상황을 그대로 되짚고, 그때의 기분을 알아주는 완전한 문장으로 말하며(예: 비 오는 날 엄마가 우산 들고 마중 나와줘서 정말 좋았겠구나. 엄마의 사랑이 느껴졌을 것 같아.), 시적인 명사구 조각으로 끝내지 말 것. 출력 형식은 정확히: (아이에게 위 작법의 공감 문장 1~2개) ||| (부모에게, 오늘 아이의 감사/마음으로 1분 대화를 여는 부드러운 질문 한 줄). 가운데 |||로만 구분하고 다른 설명은 붙이지 마라. 마크다운·별표·괄호·영어 라벨·JSON 금지, 오직 한국어 평문과 ||| 만. 쉬운 말.',
+    build: function (v) {
+      return '감사: "' + (_s(v.grat, 400) || '(없음)') + '" / 마음: "' + (_s(v.feel, 400) || '(없음)')
+        + '" / 마음신호 ' + (_n(v.wb) || 0) + '점.';
+    }
+  },
+
+  /* 3) 智 — 읽기 후 열린 질문 */
+  reading_question: {
+    max: 300,
+    system: '너는 아동의 읽기·질문 도우미다. 知(암기)가 아니라 智(스스로 생각함)를 기른다. 아이가 책에서 마음에 남았다며 적은 문장·장면을 한마디로 인정한 뒤, 그 문장이 아이의 마음·삶과 어떻게 닿는지 여는 질문 하나만 던져라(정답 없음, 채점 금지). 답을 대신 말하지 말 것. 아이를 반드시 이름으로 다정하게 부르고 너·네 같은 대명사는 쓰지 말 것. 쉬운 말, 두 문장 이내. 마크다운·별표·괄호·영어·JSON 금지, 한국어 평문만.',
+    build: function (v) {
+      const dream = _s(v.dream, 120);
+      return '아이 이름: ' + (_s(v.name, 40) || '(없음)')
+        + '. 아이가 책에서 마음에 남았다고 적은 문장: "' + (_s(v.sentence, 600) || '(아직 안 적음)') + '". '
+        + (dream ? ('아이의 꿈: ' + dream + '. ') : '')
+        + '인정 + 열린 질문 하나(꿈이 있으면 자연스러울 때만 살짝 연결).';
+    }
+  },
+
+  /* 4) 주간 리포트 — 부모에게 한마디 */
+  weekly_report: {
+    max: 300,
+    system: '너는 아동 성장 리포트 도우미. 부모에게 보내는 따뜻한 1~2문장. 평가·비교·진단 금지, 기록된 사실 기반으로 구체적으로 감사와 읽기의 꾸준함이 보이면 특히 짚어줄 것.',
+    build: function (v) {
+      return '아이 ' + (_s(v.name, 40) || '아이') + '의 최근 7일: 활동 ' + (_n(v.act) || 0) + '일, 하루 완성 '
+        + (_n(v.full) || 0) + '번, 감사 ' + (_n(v.g) || 0) + '개, 읽기 ' + (_n(v.r) || 0) + '권'
+        + (_n(v.idxAvg) != null ? (', 평균 상태 ' + _n(v.idxAvg)) : '')
+        + '. 최근 감사 예: ' + (_list(v.grats, 3, 120).join(' / ') || '없음') + '. 부모에게 한마디.';
+    }
+  },
+
+  /* 5) 월간 리포트 — 3문장 */
+  monthly_report: {
+    max: 500,
+    system: '너는 아동 성장 리포트 도우미. 부모에게 주는 정확히 3문장: 1) 한 달의 사실 요약 2) 기록에서 보이는 아이의 흥미·소질의 싹 한 가지(읽은 책·감사·실천의 패턴에서, 단정하지 말고 싹이 보인다는 톤으로) 3) 다음 달 함께 해볼 한 가지. 평가·비교·진단 금지, 따뜻하고 구체적으로. 감사와 읽기의 꾸준함이 보이면 특히 짚어줄 것.',
+    build: function (v) {
+      const dream = _s(v.dream, 120);
+      return '아이 ' + (_s(v.name, 40) || '아이') + '. 최근 30일: 활동 ' + (_n(v.act) || 0) + '일, 하루 완성 '
+        + (_n(v.full) || 0) + '번, 감사 ' + (_n(v.g) || 0) + '개, 읽기 ' + (_n(v.r) || 0) + '권, 평균 상태 '
+        + (_n(v.idxAvg) != null ? (_n(v.idxAvg) + (_s(v.idxTrend, 20) ? '(' + _s(v.idxTrend, 20) + ')' : '')) : '기록 적음')
+        + '. 최근 감사: ' + (_list(v.grats, 10, 120).join(' / ') || '없음')
+        + '. 읽은 것: ' + (_list(v.reads, 5, 80).join(', ') || '없음')
+        + '. 작은 실천: ' + (_list(v.acts, 5, 80).join(', ') || '없음') + '.'
+        + (dream ? (' 아이의 꿈: ' + dream + ' — 소질의 싹과 자연스럽게 이어지면 언급.') : '');
+    }
+  },
+
+  /* 6) 성장 순간 축하 — 한 문장 */
+  growth_moment: {
+    max: 200,
+    system: '너는 아이의 성장 코치. 아이의 변화 순간을 축하하는 딱 한 문장. 따뜻하고 구체적으로, 비교·진단 금지. 마크다운·영어·괄호 금지, 한국어 평문만.',
+    build: function (v) {
+      return '아이 ' + (_s(v.name, 40) || '친구') + '에게. 포착된 변화: ' + _s(v.change, 80)
+        + '. 최근 감사: ' + (_list(v.grats, 3, 120).join(' / ') || '없음') + '. 한 문장으로.';
+    }
+  }
+};
+
+/* 앱이 호출하는 유일한 AI 창구 — 작업 이름 + 값만 받는다 */
+app.post('/ai/task', async (req, res) => {
+  if (!sameSite(req)) return res.status(403).json({ error: 'forbidden' });
+  if (!rateLimit('aitask', 300000, 60, req.ip)) return res.status(429).json({ error: 'too many' });
+  const b = req.body || {};
+  const task = AI_TASKS[String(b.task || '')];
+  if (!task) return res.status(400).json({ error: 'unknown task' });
+  const vars = (b.vars && typeof b.vars === 'object') ? b.vars : {};
+  try {
+    const prompt = task.build(vars);
+    const out = await aiText(prompt, task.system, task.max);
+    return res.json({ text: out || null });
+  } catch (e) {
+    console.error('ai/task error:', String(e));
+    return res.json({ text: null });
+  }
+});
+
 /* ===================== 오케스트레이터 (교육OS 커널) =====================
    모든 이벤트/상태를 받아 '지금 이 아이에게 무엇을(또는 아무것도 안) 할지' 결정.
    규칙: 안전 최우선 > 부모연결 > (실시간 측정코치) > 이상 > 복귀 > 주간 > 온보딩.
