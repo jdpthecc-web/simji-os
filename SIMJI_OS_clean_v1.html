@@ -663,14 +663,14 @@ function renderWisdom(){
     headHtml(s)
     + listHtml
     + '<p class="sub">정답을 찾는 시간이 아니라, <b>마음에 남은 문장에서 생각이 자라는</b> 시간이에요.</p>'
+    + '<div class="hint" style="text-align:left;margin:2px 0 6px">오늘 읽은 책 <span style="opacity:.7">(없으면 비워도 괜찮아)</span></div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:6px"><input type="text" id="rtitle" placeholder="책·글 제목" style="flex:1;margin-bottom:0"><input type="number" id="rpages" min="1" max="2000" placeholder="쪽수" style="width:90px;margin-bottom:0;text-align:center"></div>'
+    + '<div class="hint" style="text-align:left;margin:0 0 10px">읽은 쪽수는 1쪽 = 5m로 달리기 거리가 돼요 🏃</div>'
     + '<div class="q" style="font-size:16px">📖 오늘 마음에 남은 문장</div>'
     + '<textarea id="recon" rows="3" placeholder="한 줄부터 시작해 봐. 더 쓰고 싶으면 얼마든지 좋아 🌱"></textarea>'
     + '<div class="hint" style="text-align:left;margin:-4px 0 12px;line-height:1.7">막막하면 이렇게 시작해도 좋아요<br>· 제일 기억에 남는 <b>장면</b> 하나<br>· 주인공이 한 <b>말</b> 중에 마음에 남은 것<br>· 오늘 <b>새로 알게 된</b> 것 하나<br><span style="color:var(--teal)">길게 쓰고 싶은 날은 마음껏 써도 좋아 ✨</span></div>'
     + '<div class="coach" style="margin-top:6px"><div class="label">읽기·질문 코치</div><div class="interp" id="wq">한 줄을 적어주면, 한 뼘 더 깊어지는 질문을 건넬게요.</div><div id="wa-wrap" style="display:none;margin-top:10px"><div class="q" style="margin:0 0 6px;font-size:13px">💭 질문에 대한 내 생각</div>'+gratInput('wanswer','떠오르는 생각을 적어봐…')+'</div></div>'
     + '<button class="btn btn-ghost" style="margin-top:12px" onclick="askWisdom()">열린 질문 받기</button>'
-    + '<div class="q" style="margin-top:20px">오늘 읽은 책</div>'
-    + '<div style="display:flex;gap:8px;margin-bottom:6px"><input type="text" id="rtitle" placeholder="책·글 제목" style="flex:1;margin-bottom:0"><input type="number" id="rpages" min="1" max="2000" placeholder="쪽수" style="width:90px;margin-bottom:0;text-align:center"></div>'
-    + '<div class="hint" style="text-align:left;margin:0 0 10px">읽은 쪽수는 1쪽 = 5m로 달리기 거리가 돼요 🏃</div>'
     + '<button class="btn btn-primary" style="margin-top:10px" onclick="saveReading()">기록 남기고 다음 →</button>'
     + '<div class="marathon" style="margin-top:16px">🏃 리딩 마라톤 · <b>'+total+'</b>권·편 · '+pgSum+'쪽 = '+fmtDist(mtr)+(laps?' · 완주 '+laps+'회 🏅':'')
     + '<div style="background:rgba(255,255,255,.25);border-radius:999px;height:7px;overflow:hidden;margin-top:8px"><div style="background:#fff;height:100%;width:'+pct+'%"></div></div>'
@@ -679,24 +679,48 @@ function renderWisdom(){
     + backHtml();
   go('wisdom');
 }
-var _reconNudged=false;
+var _reconNudged=false, _reconConfirmed=false;
+function reconFocus(){
+  const el=document.getElementById('recon');
+  if(el){ el.focus(); try{ el.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){} }
+}
+function reconBackToWrite(){
+  const o=document.querySelector('.ovl'); if(o) o.remove();
+  reconFocus();
+}
+function reconSaveAnyway(){
+  const o=document.querySelector('.ovl'); if(o) o.remove();
+  _reconConfirmed=true; saveReading();
+}
+function askReconAgain(){
+  showOverlay(
+    '<div style="font-size:34px;margin-bottom:6px">🌱</div>'
+    + '<h2>한 줄만 남겨볼까?</h2>'
+    + '<p style="font-size:14px;line-height:1.7">제목만 남겨도 기록은 돼. 그런데 <b>마음에 남은 한 줄</b>은 나중에 다시 읽을 때 진짜 보물이 되거든.</p>'
+    + '<p style="font-size:13px;color:var(--muted);margin-top:6px">한 단어라도 괜찮아. 재밌었다, 슬펐다 — 그것도 훌륭한 한 줄이야.</p>'
+    + '<button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="reconBackToWrite()">한 줄 적어볼게</button>'
+    + '<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="reconSaveAnyway()">오늘은 제목만 남길게</button>'
+  );
+}
 function saveReading(){
   const title=(document.getElementById('rtitle').value||'').trim();
   const recon=(document.getElementById('recon').value||'').trim();
   if(!title && !recon){ toast('한 줄이라도 적어주세요'); return; }
-  // 마음에 남은 문장이 비면 한 번만 부드럽게 권함 (막지는 않음)
+  // 마음에 남은 문장이 비면 2단계로 권함 (끝내 원하면 막지 않음)
   if(!recon){
     if(!_reconNudged){
       _reconNudged=true;
       toast('한 줄만 적어볼까? 짧아도 좋아 🌱');
-      const el=document.getElementById('recon'); if(el) el.focus();
+      reconFocus();
       return;
     }
-  } else { _reconNudged=false; }
+    if(!_reconConfirmed){ askReconAgain(); return; }
+  } else { _reconNudged=false; _reconConfirmed=false; }
   const pages=Math.max(0,Math.min(2000,parseInt((document.getElementById('rpages')||{}).value,10)||0));
   const ans=((document.getElementById('wanswer')||{}).value||'').trim();
   DB.addReading({ title:title, recon:recon, pages:pages, question:_lastWQ, answer:ans });
   logEvent('reading', { hasTitle:title?1:0, hasRecon:recon?1:0, pages:pages, gotQ:_lastWQ?1:0, hasAns:ans?1:0 });
+  _reconNudged=false; _reconConfirmed=false;
   completeStage('wisdom', {});
 }
 async function askWisdom(){
