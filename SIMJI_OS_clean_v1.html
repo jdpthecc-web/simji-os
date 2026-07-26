@@ -96,6 +96,8 @@ textarea:focus,input:focus{outline:none;border-color:var(--teal)}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
 .chip{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:8px 14px;font-size:13px;cursor:pointer;font-family:inherit}
 .chip:active{background:var(--mint-soft);border-color:var(--mint)}
+.chip.sel{background:var(--mint-soft);border-color:var(--mint);font-weight:700;color:var(--navy)}
+.chip-breathe{border:1.5px solid var(--mint);background:var(--mint-soft);color:var(--navy);font-weight:700}
 .confetti{position:absolute;inset:0;pointer-events:none}
 .confetti span{position:absolute;top:100%;font-size:20px;animation:fly 1.6s ease-out forwards}
 @keyframes fly{to{transform:translateY(-360px) rotate(360deg);opacity:0}}
@@ -736,20 +738,30 @@ async function askWisdom(){
 function renderAction(){
   const s=STAGES[3];
   const returned = DB.returnedAfterBreak();
+  const presets = (tone()==='teen'
+      ? ['목·어깨 스트레칭 1분','창밖 멀리 30초 바라보기','제자리 스쿼트 10번','오늘 잘한 일 하나 인정하기']
+      : ['기지개 쭉— 켜고 어깨 돌리기','가족 한 번 꼭 안아주기','창밖 멀리 30초 바라보기','오늘 잘한 일 찾아 나 칭찬하기']);
+  const mine = recentActs(3);
+  const streak = actStreak();
   document.getElementById('sc-action').innerHTML =
     headHtml(s)
     + (returned?'<div class="coach" style="margin-bottom:14px"><div class="label">복귀 환영</div><div class="interp">며칠 쉬었어도 돌아온 게 가장 중요해요. 반가워요! 🌱</div></div>':'')
     + '<div class="q">오늘 할 \'아주 작은 한 걸음\' 하나를 정해볼까요?</div>'
+    + '<button type="button" class="chip chip-breathe" style="width:100%;padding:13px;margin:10px 0 2px" onclick="breathe()">'+(tone()==='teen'?'4·7·8 호흡하기 🫁':'풍선 복식호흡 하기 🎈')+'</button>'
+    + '<div class="hint" style="text-align:left;margin:0 0 8px">누르면 함께 호흡해요 — 이완력을 기르는 활동이에요</div>'
     + '<div class="chips">'
-    + '<button class="chip" style="border-color:var(--mint);background:var(--mint-soft)" onclick="breathe()">'+(tone()==='teen'?'4·7·8 호흡하기 🫁':'풍선 복식호흡 하기 🎈')+'</button>'
-    + (tone()==='teen'
-        ? ['목·어깨 스트레칭 1분','창밖 멀리 30초 바라보기','제자리 스쿼트 10번','오늘 잘한 일 하나 인정하기']
-        : ['기지개 쭉— 켜고 어깨 돌리기','가족 한 번 꼭 안아주기','창밖 멀리 30초 바라보기','오늘 잘한 일 찾아 나 칭찬하기']
-      ).map(function(c){ return '<button class="chip" onclick="document.getElementById(\'act\').value=\''+c+'\'">'+c+'</button>'; }).join('')
+    + presets.map(function(c){ return '<button type="button" class="chip" data-act="'+esc(c)+'">'+esc(c)+'</button>'; }).join('')
     + '</div>'
+    + (mine.length
+        ? '<div class="hint" style="text-align:left;margin:12px 0 2px">내가 전에 했던 걸음 — 눌러서 다시 하기</div>'
+          + '<div class="chips">'+mine.map(function(c){ return '<button type="button" class="chip" data-act="'+esc(c)+'">'+esc(c)+'</button>'; }).join('')+'</div>'
+        : '')
+    + '<div class="hint" style="text-align:left;margin:14px 0 2px">직접 정하기</div>'
     + '<input type="text" id="act" placeholder="예: 책 한 쪽 읽기 / 물 한 컵 마시기">'
-    + '<button class="btn btn-primary" style="margin-top:20px" onclick="doAction()">'+(tone()==='teen'?'오늘 마무리하기 ✓':'오늘도 한 뼘 자라기 🌱')+'</button>'
-    + '<div class="hint">크게 말고 작게. 끊겨도 다시 돌아오면 돼요 — 그게 진짜 힘이에요.</div>'
+    + '<button type="button" class="btn btn-ghost" style="margin-top:8px" id="act-ai" onclick="suggestAct(this)">✨ 오늘 나에게 맞는 한 걸음 추천받기</button>'
+    + '<div class="coach" id="act-tip" style="display:none;margin-top:10px"><div class="label">오늘의 제안</div><div class="interp" id="act-tip-t"></div></div>'
+    + '<button class="btn btn-primary" style="margin-top:16px" onclick="doAction()">'+(tone()==='teen'?'오늘 마무리하기 ✓':'오늘도 한 뼘 자라기 🌱')+'</button>'
+    + '<div class="hint">'+(streak>1?('작은 걸음을 '+streak+'일 이어왔어요 🌱 '):'')+'크게 말고 작게. 끊겨도 다시 돌아오면 돼요 — 그게 진짜 힘이에요.</div>'
     + backHtml();
   go('action');
 }
@@ -760,6 +772,56 @@ function headHtml(s){
     + '<div><h2>'+s.han+' · '+s.name+'</h2><p class="sub">'+s.desc+'</p></div></div>';
 }
 function backHtml(){ return '<button class="btn btn-ghost" style="margin-top:10px" onclick="goHome()">← 홈으로</button>'; }
+/* 최근에 직접 쓴 '나만의 한 걸음' 몇 개 (중복 제거, 최신순) */
+function recentActs(n){
+  try{
+    const d=DB.load(); const seen={}; const out=[];
+    Object.keys(d.days).sort().reverse().forEach(function(k){
+      const a=d.days[k].done && d.days[k].done.action;
+      const v=a && a.act && String(a.act).trim();
+      if(v && !seen[v]){ seen[v]=1; out.push(v); }
+    });
+    return out.slice(0, n||3);
+  }catch(e){ return []; }
+}
+/* 실천을 며칠 연속 이어왔는지 */
+function actStreak(){
+  try{
+    const d=DB.load(); let n=0; const dt=new Date();
+    for(let i=0;i<400;i++){
+      const k=new Date(dt.getTime()-i*86400000).toISOString().slice(0,10);
+      const a=d.days[k] && d.days[k].done && d.days[k].done.action;
+      if(a && a.act) n++; else if(i>0) break;
+    }
+    return n;
+  }catch(e){ return 0; }
+}
+/* 칩 선택 — 인라인 코드 대신 위임 방식(따옴표·특수문자에 안전) */
+document.addEventListener('click', function(e){
+  const b = e.target && e.target.closest ? e.target.closest('[data-act]') : null;
+  if(!b) return;
+  const inp = document.getElementById('act');
+  if(!inp) return;
+  inp.value = b.getAttribute('data-act') || '';
+  const all = document.querySelectorAll('[data-act]');
+  for(let i=0;i<all.length;i++) all[i].classList.remove('sel');
+  b.classList.add('sel');
+});
+/* AI가 오늘 상태에 맞는 한 걸음을 제안 */
+async function suggestAct(btn){
+  const tip=document.getElementById('act-tip'), tt=document.getElementById('act-tip-t');
+  if(btn){ btn.disabled=true; btn.textContent='생각하는 중…'; }
+  const p=DB.profile();
+  const out = await aiTask('action_suggest', {
+    name: p?p.name:'', band: p?p.band:'', focus: _brainInput.focus, energy: _brainInput.energy,
+    recent: recentActs(3)
+  });
+  const text = out || (tone()==='teen' ? '물 한 컵 마시고 어깨 한 번 돌리기' : '기지개 쭉 켜고 물 한 컵 마시기');
+  const inp=document.getElementById('act'); if(inp) inp.value=text;
+  const all=document.querySelectorAll('[data-act]'); for(let i=0;i<all.length;i++) all[i].classList.remove('sel');
+  if(tip&&tt){ tt.textContent=text; tip.style.display='block'; }
+  if(btn){ btn.disabled=false; btn.textContent='✨ 다시 추천받기'; }
+}
 function doAction(){ completeStage('action',{ act:(document.getElementById('act').value||'').slice(0,60) }); }
 function completeStage(key, payload){
   DB.markDone(key, payload);
