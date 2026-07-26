@@ -989,7 +989,7 @@ async function solapiSendAlimtalk(to, variables) {
 }
 app.get('/notify/status', (req, res) => res.json({ configured: kakaoConfigured() }));
 // [테스트] 브라우저로 접속 → 미리 등록한 NOTIFY_TEST_TO(본인 번호)로 샘플 알림톡 1건 발송
-app.get('/notify/test', async (req, res) => {
+app.get('/notify/test', adminAuth, async (req, res) => {   // 발송비가 드는 기능이라 관리자 전용
   if (!kakaoConfigured()) return res.json({ ok:false, configured:false, message:'카카오 알림톡 미설정 — Render 환경변수(SOLAPI/KAKAO)를 확인하세요' });
   if (!NOTIFY_TEST_TO) return res.json({ ok:false, configured:true, message:'NOTIFY_TEST_TO(테스트 수신번호) 미설정 — Render에 본인 휴대폰 번호를 추가하세요' });
   const variables = { '#{아이이름}': '민준', '#{오늘기록}': '오늘 친구랑 화해해서 마음이 편했어요.' };
@@ -999,6 +999,8 @@ app.get('/notify/test', async (req, res) => {
 
 // [실제] 아이가 마음 한 줄을 남기면 앱이 호출 → 활성 구독자 보호자에게만 알림톡
 app.post('/notify/record', async (req, res) => {
+  if (!sameSite(req)) return res.json({ ok:false, message:'잘못된 접근입니다.' });
+  if (!rateLimit('notify', 3600000, 10, req.ip)) return res.json({ ok:false, message:'잠시 후 다시 시도해 주세요.' });
   const b = req.body || {};
   const email = (b.email || '').toString().trim().toLowerCase();
   const record = (b.record || '').toString().replace(/\s+/g, ' ').trim().slice(0, 180);
