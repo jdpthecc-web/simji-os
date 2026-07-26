@@ -741,7 +741,7 @@ function renderAction(){
   const returned = DB.returnedAfterBreak();
   const presets = (tone()==='teen'
       ? ['목·어깨 스트레칭 1분','창밖 멀리 30초 바라보기','제자리 스쿼트 10번','오늘 잘한 일 하나 인정하기']
-      : ['기지개 쭉— 켜고 어깨 돌리기','가족 한 번 꼭 안아주기','창밖 멀리 30초 바라보기','오늘 잘한 일 찾아 나 칭찬하기']);
+      : ['기지개 쭉— 켜고 어깨 돌리기','제자리 뛰기 10번','가족 한 번 꼭 안아주기','창밖 멀리 30초 바라보기','오늘 잘한 일 찾아 나 칭찬하기']);
   const mine = recentActs(3);
   const streak = actStreak();
   document.getElementById('sc-action').innerHTML =
@@ -784,6 +784,8 @@ const ACT_FN = {
   '제자리 스쿼트 10번':'doSquat',
   '오늘 잘한 일 하나 인정하기':'doPraise',
   '기지개 쭉— 켜고 어깨 돌리기':'doStretch',
+  '제자리 뛰기 10번':'doJump',
+  '가족 한 번 꼭 안아주기':'doHug',
   '오늘 잘한 일 찾아 나 칭찬하기':'doPraise'
 };
 function recentActs(n){
@@ -820,16 +822,61 @@ document.addEventListener('click', function(e){
   for(let i=0;i<all.length;i++) all[i].classList.remove('sel');
   b.classList.add('sel');
 });
+/* ===== 오늘의 한 걸음 후보 목록 =====
+   조건: 1분 안에 · 준비물 없이 · 돈 들이지 않고 · 지금 그 자리에서.
+   몸 / 이완 / 마음 / 관계 / 정리 / 배움 을 골고루 섞었습니다. */
+const ACT_POOL = {
+  elem: [
+    '제자리에서 열 번 폴짝 뛰기','손 털고 팔 크게 돌리기','한 발로 열까지 서 있기','까치발로 열 번 올라갔다 내려오기',
+    '고양이처럼 등을 둥글게 폈다 굽히기','기지개 쭉 켜고 하품 한 번',
+    '눈 감고 들리는 소리 세 가지 찾기','창밖에서 구름이나 나무 하나 찾아보기','물 한 컵 천천히 마시기',
+    '숨을 깊게 세 번 쉬기','손을 비벼 따뜻하게 만든 뒤 눈에 대기',
+    '오늘 웃었던 순간 하나 떠올리기','거울 보고 나에게 한 번 웃어주기','나에게 잘했다고 말해주기',
+    '가족에게 고맙다고 말하기','가족 한 명 꼭 안아주기','동생이나 형에게 칭찬 한마디',
+    '책상 위 물건 세 개만 제자리에 두기','신발 나란히 놓기','내일 입을 옷 미리 꺼내두기',
+    '가방 속 1분만 정리하기','쓰레기 하나 주워 버리기',
+    '책 딱 한 쪽만 읽기','오늘 새로 알게 된 것 하나 말해보기'
+  ],
+  teen: [
+    '제자리 스쿼트 열 번','목과 어깨 천천히 돌리기','종아리 들었다 내리기 열다섯 번','벽에 등 대고 삼십 초 버티기',
+    '계단 한 층 걸어 올라가기','무릎 대고 팔굽혀펴기 다섯 번',
+    '사초 들이쉬고 육초 내쉬기 세 번','눈 감고 삼십 초 아무것도 안 하기','창밖 먼 곳 삼십 초 바라보기',
+    '손목과 목 뒤를 삼십 초 주무르기','물 한 컵 천천히 마시기',
+    '오늘 잘한 일 하나 적기','지금 기분을 한 단어로 말해보기','나에게 수고했다고 말해주기',
+    '가족에게 메시지 한 줄 보내기','고마운 사람 한 명 떠올리기','친구에게 안부 한마디 보내기',
+    '책상 위 세 개만 치우기','휴대폰 오분간 엎어두기','알림 하나 꺼두기','가방 일분만 정리하기',
+    '내일 할 일 딱 하나만 적기','책 한 쪽 읽기','오늘 배운 것 한 줄로 요약하기'
+  ]
+};
+var _actShown = [];   /* 이번 세션에 이미 제안한 것 — 연달아 같은 게 안 나오게 */
+function pickFromPool(){
+  const pool = ACT_POOL[tone()==='teen'?'teen':'elem'];
+  const done = recentActs(6);
+  let cand = pool.filter(function(x){ return _actShown.indexOf(x)<0 && done.indexOf(x)<0; });
+  if(!cand.length) cand = pool.filter(function(x){ return _actShown.indexOf(x)<0; });
+  if(!cand.length){ _actShown = []; cand = pool; }
+  return cand[Math.floor(Math.random()*cand.length)];
+}
 /* AI가 오늘 상태에 맞는 한 걸음을 제안 */
 async function suggestAct(btn){
   const tip=document.getElementById('act-tip'), tt=document.getElementById('act-tip-t');
   if(btn){ btn.disabled=true; btn.textContent='생각하는 중…'; }
   const p=DB.profile();
-  const out = await aiTask('action_suggest', {
-    name: p?p.name:'', band: p?p.band:'', focus: _brainInput.focus, energy: _brainInput.energy,
-    recent: recentActs(3)
-  });
-  const text = out || (tone()==='teen' ? '물 한 컵 마시고 어깨 한 번 돌리기' : '기지개 쭉 켜고 물 한 컵 마시기');
+  const themes=['몸을 움직이는 것','마음을 돌보는 것','가족이나 친구와 이어지는 것','주변을 정리하는 것','잠깐 쉬는 것','배우는 것'];
+  const theme=themes[Math.floor(Math.random()*themes.length)];
+  let out=null;
+  try{
+    out = await aiTask('action_suggest', {
+      name: p?p.name:'', band: p?p.band:'',
+      focus: (typeof _brainInput!=='undefined')?_brainInput.focus:null,
+      energy: (typeof _brainInput!=='undefined')?_brainInput.energy:null,
+      recent: recentActs(3), avoid: _actShown.slice(-6), theme: theme
+    });
+  }catch(e){ out=null; }
+  // AI가 실패했거나 방금 준 것과 같으면 후보 목록에서 새로 고른다
+  if(!out || _actShown.indexOf(out)>=0) out = pickFromPool();
+  const text = out;
+  _actShown.push(text); if(_actShown.length>12) _actShown.shift();
   const inp=document.getElementById('act'); if(inp) inp.value=text;
   const all=document.querySelectorAll('[data-act]'); for(let i=0;i<all.length;i++) all[i].classList.remove('sel');
   if(tip&&tt){ tt.textContent=text; tip.style.display='block'; }
@@ -895,32 +942,93 @@ function doGaze(){
   };
 }
 
-/* ③ 제자리 스쿼트 10번 — 누를 때마다 음성으로 세어줌 */
-function doSquat(){
+/* ③ 횟수 세기 활동 — 자동으로 세어주며 따라하기 (스쿼트·제자리 뛰기 공용) */
+function doSquat(){ countActivity('제자리 스쿼트','제자리 스쿼트 10번','내려갔다 올라오기를 소리에 맞춰 열 번','squat',3200); }
+function doJump(){ countActivity('제자리 뛰기','제자리 뛰기 10번','폴짝 폴짝, 소리에 맞춰 열 번','jump',2000); }
+function countActivity(title, label, guide, kind, msPerRep){
   const names=['하나','둘','셋','넷','다섯','여섯','일곱','여덟','아홉','열'];
   const o=showOverlay(
-    '<h2>제자리 스쿼트</h2>'
-    +'<div id="sq-c" style="font-size:56px;font-weight:800;color:var(--teal);margin:14px 0">0 <span style="font-size:20px;color:var(--muted)">/ 10</span></div>'
-    +'<p id="sq-s">한 번 앉았다 일어날 때마다 아래 버튼을 눌러요.</p>'
+    '<h2 id="sq-t">'+esc(title)+'</h2>'
+    +'<div id="sq-c" style="font-size:64px;font-weight:800;color:var(--teal);margin:12px 0;line-height:1">0 <span style="font-size:20px;color:var(--muted)">/ 10</span></div>'
+    +'<p id="sq-s">'+esc(guide)+'</p>'
+    +'<p style="font-size:12px;color:var(--muted);margin-top:6px">폰은 내려놓고 소리만 들으면 돼요.</p>'
     +voiceBtnHtml()
-    +'<button class="btn btn-primary" style="width:100%;margin-top:12px;padding:20px;font-size:18px" id="sq-tap">앉았다 일어났어요 👇</button>'
+    +'<button class="btn btn-primary" style="width:100%;margin-top:12px;padding:16px;font-size:17px" id="sq-go">시작 (자동으로 세어줄게요)</button>'
+    +'<button class="btn btn-ghost" style="width:100%;margin-top:8px" id="sq-manual">내가 직접 셀래요</button>'
     +'<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="closeOvl(this)">그만하기</button>');
-  const c=o.querySelector('#sq-c'), sub=o.querySelector('#sq-s'), tap=o.querySelector('#sq-tap');
-  let n=0;
-  speak('준비되면 시작해요');
-  tap.onclick=function(){
-    if(n>=10) return;
-    n++;
-    c.innerHTML=n+' <span style="font-size:20px;color:var(--muted)">/ 10</span>';
-    speak(names[n-1]);
-    if(n===5) sub.textContent='절반! 잘하고 있어요 💪';
-    if(n>=10){
-      tap.style.display='none';
-      c.innerHTML='✓'; sub.textContent='열 번 다 했어요! 대단해요.';
-      setTimeout(function(){ speak('열 번 다 했어요. 참 잘했어요'); },700);
-      fillAct('제자리 스쿼트 10번'); logEvent('run_mark',{kind:'squat'});
-      setTimeout(function(){ closeOvl(c); },2200);
+  const tEl=o.querySelector('#sq-t'), c=o.querySelector('#sq-c'), sub=o.querySelector('#sq-s');
+  const go=o.querySelector('#sq-go'), manual=o.querySelector('#sq-manual');
+  let n=0, timer=null;
+
+  function show(){ c.innerHTML=n+' <span style="font-size:20px;color:var(--muted)">/ 10</span>'; }
+  function finish(){
+    if(timer) clearTimeout(timer);
+    c.innerHTML='✓'; tEl.textContent='다 했어요! 💪'; sub.textContent='열 번 완료. 몸이 조금 개운하죠?';
+    speak('열 번 다 했어요. 참 잘했어요');
+    fillAct(label); logEvent('run_mark',{kind:kind});
+    setTimeout(function(){ closeOvl(c); },2200);
+  }
+
+  /* 자동 모드 — 일정한 박자로 세어주고 아이는 따라만 한다 */
+  go.onclick=function(){
+    go.style.display='none'; manual.style.display='none';
+    let ready=3;
+    sub.textContent='준비하세요';
+    speak('준비하세요');
+    (function countdown(){
+      if(!document.body.contains(c)) return;
+      if(ready>0){ c.innerHTML=ready; speak(String(ready)); ready--; timer=setTimeout(countdown,1000); return; }
+      sub.textContent='소리에 맞춰 함께해요';
+      speak('시작');
+      timer=setTimeout(rep, 900);
+    })();
+    function rep(){
+      if(!document.body.contains(c)) return;
+      n++; show(); speak(names[n-1]);
+      if(n===5) sub.textContent='절반! 잘하고 있어요 💪';
+      if(n>=10){ setTimeout(finish,900); return; }
+      timer=setTimeout(rep, msPerRep);
     }
+  };
+
+  /* 직접 세기 — 자기 속도로 하고 싶을 때 */
+  manual.onclick=function(){
+    go.style.display='none'; manual.style.display='none';
+    sub.textContent='한 번 할 때마다 아래를 누르세요';
+    const tap=document.createElement('button');
+    tap.className='btn btn-primary';
+    tap.style.cssText='width:100%;margin-top:12px;padding:20px;font-size:18px';
+    tap.textContent='한 번 했어요 👇';
+    manual.parentNode.insertBefore(tap, manual);
+    speak('준비되면 시작해요');
+    tap.onclick=function(){
+      if(n>=10) return;
+      n++; show(); speak(names[n-1]);
+      if(n===5) sub.textContent='절반! 잘하고 있어요 💪';
+      if(n>=10){ tap.style.display='none'; finish(); }
+    };
+  };
+}
+
+/* ③-2 가족 한 번 꼭 안아주기 */
+function doHug(){
+  const o=showOverlay(
+    '<div style="font-size:40px">🤗</div>'
+    +'<h2>가족 한 번 꼭 안아주기</h2>'
+    +'<p style="font-size:14px;line-height:1.7">지금 곁에 있는 사람에게 다녀와요. 없으면 전화나 메시지도 좋아요.</p>'
+    +'<p id="hg-s" style="font-size:13px;color:var(--muted);margin-top:6px">말없이 안아주기만 해도 충분해요.</p>'
+    +voiceBtnHtml()
+    +'<button class="btn btn-primary" style="width:100%;margin-top:12px" id="hg-go">안아주고 왔어요 💚</button>'
+    +'<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="closeOvl(this)">나중에 할게요</button>');
+  const go=o.querySelector('#hg-go'), sub=o.querySelector('#hg-s');
+  speak('곁에 있는 가족을 한 번 안아주고 와요');
+  go.onclick=function(){
+    o.querySelector('h2').textContent='잘했어요 💚';
+    sub.textContent='오늘 누군가의 하루가 조금 따뜻해졌어요.';
+    go.style.display='none';
+    speak('참 잘했어요');
+    fillAct('가족 한 번 꼭 안아주기'); logEvent('run_mark',{kind:'hug'});
+    setTimeout(function(){ closeOvl(sub); },1800);
   };
 }
 
