@@ -1565,24 +1565,106 @@ function micFill(id,btn){
 }
 /* ---------- 智 마라톤 구간 축하 (1쪽=5m · 완주 42.195km) ---------- */
 function fmtDist(m){ return m<1000? Math.round(m)+'m' : (m/1000).toFixed(m<10000?2:1)+'km'; }
+/* 리딩 마라톤 배지 — 코드로 그리는 SVG (이미지 파일 없이 어떤 화면에서도 선명)
+   1km · 5km마다 · 42.195km 완주 */
+const RUN_MARKS = [
+  [1000,   '1km',      '첫 걸음',       'seed'],
+  [5000,   '5km',      '달리기 시작',   't1'],
+  [10000,  '10km',     '두 자리 수',    't1'],
+  [15000,  '15km',     '길이 열렸어',   't2'],
+  [20000,  '20km',     '절반 가까이',   't2'],
+  [25000,  '25km',     '반환점 너머',   't2'],
+  [30000,  '30km',     '가장 긴 구간',  't3'],
+  [35000,  '35km',     '끝이 보인다',   't3'],
+  [40000,  '40km',     '2.195km 남았어','t3'],
+  [42195,  '42.195km', '완주',          'gold']
+];
+const BADGE_TONE = {
+  seed:{ ring:'#9FE1CB', face:'#EAF8F1', ink:'#0F766E', sub:'#2F7F6E', rib:'#9FE1CB' },
+  t1:  { ring:'#5FC3A6', face:'#E4F5EE', ink:'#0F766E', sub:'#2F7F6E', rib:'#5FC3A6' },
+  t2:  { ring:'#2F9E83', face:'#DFF1EA', ink:'#0B5F59', sub:'#227064', rib:'#2F9E83' },
+  t3:  { ring:'#1F5F7A', face:'#E2EDF3', ink:'#16324F', sub:'#2C5D78', rib:'#1F5F7A' },
+  gold:{ ring:'#D9A93C', face:'#FCF3DC', ink:'#7A5A28', sub:'#9A7530', rib:'#D9A93C' }
+};
+/* 톱니 테두리 원 좌표 */
+function _serrate(cx,cy,r,teeth,depth){
+  let p='';
+  for(let i=0;i<teeth*2;i++){
+    const a=(Math.PI*2/(teeth*2))*i - Math.PI/2;
+    const rr=(i%2===0)? r : r-depth;
+    const x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr;
+    p += (i===0?'M':'L')+x.toFixed(1)+' '+y.toFixed(1);
+  }
+  return p+'Z';
+}
+function runBadgeSVG(mark, size, earned){
+  const label=mark[1], sub=mark[2], tone=BADGE_TONE[mark[3]]||BADGE_TONE.t1;
+  const s=size||110;
+  const dim = earned===false;
+  const ring=dim?'#D8DEE3':tone.ring, face=dim?'#F4F6F7':tone.face;
+  const ink=dim?'#A9B4BC':tone.ink, sub2=dim?'#B7C0C6':tone.sub, rib=dim?'#D8DEE3':tone.rib;
+  const big = label.length>4 ? 15 : 22;
+  return '<svg viewBox="0 0 100 124" width="'+s+'" height="'+(s*1.24)+'" aria-label="'+esc(label)+' 배지">'
+    + '<path d="M32 78 L26 118 L50 106 L74 118 L68 78 Z" fill="'+rib+'" opacity="'+(dim?'.5':'.9')+'"/>'
+    + '<path d="'+_serrate(50,52,44,26,4)+'" fill="'+ring+'"/>'
+    + '<circle cx="50" cy="52" r="37" fill="'+face+'"/>'
+    + '<circle cx="50" cy="52" r="37" fill="none" stroke="'+ring+'" stroke-width="1.6" opacity=".7"/>'
+    + (mark[3]==='gold'
+        ? '<path d="M30 60 Q34 44 42 38 M70 60 Q66 44 58 38" fill="none" stroke="'+ink+'" stroke-width="2" opacity=".35" stroke-linecap="round"/>'
+        : '')
+    + (mark[3]==='seed'
+        ? '<path d="M50 30 q7 5 7 11 q-7 1 -9 -4 q-2 -6 2 -7 Z" fill="'+ink+'" opacity=".45"/>'
+        : '')
+    + '<text x="50" y="'+(mark[3]==='seed'||mark[3]==='gold'?58:56)+'" text-anchor="middle" font-family="inherit" font-size="'+big+'" font-weight="800" fill="'+ink+'">'+esc(label)+'</text>'
+    + '<text x="50" y="'+(mark[3]==='seed'||mark[3]==='gold'?71:70)+'" text-anchor="middle" font-family="inherit" font-size="8.5" font-weight="600" fill="'+sub2+'">'+esc(sub)+'</text>'
+    + '</svg>';
+}
+
+/* 지금까지 딴 배지 목록 (완주 회차 포함) */
+function earnedBadges(){
+  const m=DB.readingMeters(); const laps=Math.floor(m/42195); const out=[];
+  for(let L=0;L<=laps;L++){
+    for(let i=0;i<RUN_MARKS.length;i++){
+      if(L*42195+RUN_MARKS[i][0] <= m) out.push({ mark:RUN_MARKS[i], lap:L+1 });
+    }
+  }
+  return out;
+}
+function nextBadge(){
+  const m=DB.readingMeters(); const laps=Math.floor(m/42195);
+  for(let L=0;L<=laps+1;L++){
+    for(let i=0;i<RUN_MARKS.length;i++){
+      const th=L*42195+RUN_MARKS[i][0];
+      if(th>m) return { mark:RUN_MARKS[i], lap:L+1, need:th-m };
+    }
+  }
+  return null;
+}
+
 function checkRunMoments(){
   if(document.querySelector('.ovl')) return;
   const m=DB.readingMeters(); if(m<=0) return;
   const d=DB.load(); const last=d.runCel||0;
-  const marks=[[5000,'5km 지점 통과'],[10000,'10km 지점 통과'],[21097.5,'하프 마라톤 통과'],[30000,'30km 지점 통과'],[42195,'마라톤 완주']];
   const lapMax=Math.floor(m/42195);
   let best=null;
   for(let L=0;L<=lapMax;L++){
-    for(let i=0;i<marks.length;i++){
-      const th=L*42195+marks[i][0];
-      if(th<=m && th>last) best=[th, marks[i][1], L+1, marks[i][0]===42195];
+    for(let i=0;i<RUN_MARKS.length;i++){
+      const th=L*42195+RUN_MARKS[i][0];
+      if(th<=m && th>last) best=[th, RUN_MARKS[i], L+1];
     }
   }
   if(!best) return;
   d.runCel=best[0]; DB.save(d);
   const p=DB.profile(); const nm=p?vocative(p.name):'';
-  const laps=Math.floor(m/42195);
-  showOverlay('<div style="font-size:40px;margin-bottom:6px">'+(best[3]?'🏅':'🏃')+'</div><h2>'+(nm?nm+', ':'')+best[2]+'번째 마라톤 '+best[1]+'!</h2><p>'+(best[3]?('책 읽기로 42.195km를 완주했어! 완주 '+laps+'회 — 이 기록은 평생 남아.'):'1쪽 = 5m. 네가 읽은 만큼 달린 거야. 계속 가보자!')+'</p><button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="this.closest(\'.ovl\').remove()">달리자!</button>');
+  const mk=best[1], full=(mk[0]===42195);
+  showOverlay(
+    '<div style="margin-bottom:4px">'+runBadgeSVG(mk,120,true)+'</div>'
+    + '<h2>'+(nm?nm+', ':'')+(full?(best[2]+'번째 마라톤 완주!'):(mk[1]+' 지점 통과!'))+'</h2>'
+    + '<p style="font-size:14px;line-height:1.75">'+(full
+        ? '책 읽기로 42.195km를 달렸어. 이 기록은 사라지지 않고 평생 남아.'
+        : '1쪽 = 5m. 네가 읽은 만큼 달린 거야. <b>'+esc(mk[2])+'</b>')+'</p>'
+    + '<p style="font-size:12px;color:var(--muted);margin-top:6px">배지는 나의 방 → 나의 도서관에 모여요</p>'
+    + '<button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="this.closest(\'.ovl\').remove()">계속 달리자!</button>');
   logEvent('run_mark',{m:Math.round(best[0])});
 }
 
@@ -1614,6 +1696,24 @@ function renderMyRoom(){
     + '<button class="btn btn-primary" style="width:100%;margin-bottom:14px" onclick="giftFromPast()">🎁 그날의 나에게서 선물 받기</button>'
     + '<button class="btn btn-ghost" style="width:100%;margin-bottom:14px;margin-top:-4px" onclick="openPastToday()">📅 지난날의 오늘 보기</button>'
     + '<div class="card" style="margin-bottom:14px;cursor:pointer;background:var(--mint-soft);border:1px solid var(--mint)" onclick="renderSentences()"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:700">🌱 나의 문장 모음</div><div style="font-size:12px;color:var(--muted)">지금까지 모은 문장 '+reads.filter(function(e){return e.recon&&e.recon.trim();}).length+'개 · 하나도 사라지지 않아요</div></div><div style="color:var(--teal)">→</div></div></div>'
+    + (function(){
+        /* 리딩 마라톤 배지 진열장 — 딴 것은 색으로, 아직인 것은 흐리게 */
+        const got=earnedBadges(), nx=nextBadge();
+        const gotKm={}; got.forEach(function(g){ gotKm[g.mark[0]]=(gotKm[g.mark[0]]||0)+1; });
+        const cells=RUN_MARKS.map(function(mk){
+          const n=gotKm[mk[0]]||0;
+          return '<div style="text-align:center;position:relative">'
+            + runBadgeSVG(mk, 62, n>0)
+            + (n>1?'<div style="position:absolute;top:0;right:2px;background:var(--navy);color:#fff;font-size:10px;font-weight:700;border-radius:999px;padding:1px 6px">×'+n+'</div>':'')
+            + '</div>';
+        }).join('');
+        return '<div class="card" style="margin-bottom:14px">'
+          + '<div style="font-weight:700;margin-bottom:2px">🏃 리딩 마라톤 배지 · '+got.length+'개</div>'
+          + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">'+fmtDist(mtr)+' 달렸어'
+          + (nx?(' · 다음 <b style="color:var(--teal)">'+esc(nx.mark[1])+'</b>까지 '+fmtDist(nx.need)):'')+'</div>'
+          + '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;justify-items:center">'+cells+'</div>'
+          + '</div>';
+      })()
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:4px">📚 나의 도서관 · '+reads.length+'권·편'+(laps?' · 완주 🏅×'+laps:'')+'</div>'+rHtml+(rMore>0?'<div style="font-size:11px;color:var(--muted);padding-top:8px">…그 이전 기록 '+rMore+'권은 소중히 보관 중</div>':'')+'</div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:4px">🙏 감사 보물상자 · '+grats.length+'개</div>'+gHtml+(gMore>0?'<div style="font-size:11px;color:var(--muted);padding-top:8px">…그 이전 보물 '+gMore+'개는 소중히 보관 중</div>':'')+'</div>'
     + (marks.length?'<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:8px">🏅 나의 발자취</div><div style="display:flex;flex-wrap:wrap;gap:8px">'+marks.map(function(m){return '<span style="background:var(--mint-soft);border:1px solid var(--mint);border-radius:999px;padding:6px 12px;font-size:12px;white-space:nowrap">'+m+'</span>';}).join('')+'</div></div>':'')
