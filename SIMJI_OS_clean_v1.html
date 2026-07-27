@@ -592,7 +592,7 @@ function renderHeart(){
     + '<div class="q">오늘의 마음 신호</div>'
     + heartScale('mood','기분',['😢','😟','😐','🙂','😊'])
     + heartScale('calm','편안함',['😣','😕','😐','🙂','😌'])
-    + heartScale('connect','곁에 누군가',['🙍','🙎','😐','🙂','🤗'])
+    + heartScale('connect','곁에 누군가',['😔','🙁','😐','🤗','🥰'])
     + '<div class="hint" style="text-align:left;margin-top:2px">곁에 누군가 = 오늘 나를 챙겨주는 사람이 있다고 느꼈는지</div>'
     + '<button class="btn btn-primary" style="margin-top:20px" id="heart-go" onclick="submitHeart()">마음 남기기</button>'
     + '<div id="heart-result"></div>'
@@ -660,15 +660,17 @@ function renderWisdom(){
   const reconCount=log.reduce(function(x,e){return x+((e.recon&&e.recon.trim())?1:0);},0);
   const mtr=pgSum*5; const laps=Math.floor(mtr/42195); const cur=mtr-laps*42195; const pct=Math.min(100,Math.round(cur/42195*100));
   const listHtml = total
-    ? recent.map(function(e){ const tt=e.title||(e.recon?e.recon.slice(0,14)+'…':'제목 없이 남긴 기록'); return '<div class="rlog"><b>'+esc(tt)+'</b><span>'+e.date+(e.pages?' · '+e.pages+'쪽':'')+'</span></div>'; }).join('')
+    ? recent.map(function(e){ const tt=e.title||(e.recon?e.recon.slice(0,14)+'…':'제목 없이 남긴 기록'); return '<div class="rlog"><b>'+esc(tt)+'</b>'+(e.author?'<span style="color:var(--muted)">'+esc(e.author)+'</span>':'')+'<span>'+e.date+(e.pages?' · '+e.pages+'쪽':'')+'</span></div>'; }).join('')
     : '<div class="sub" style="text-align:center;padding:4px 0 10px">아직 기록이 없어요. 오늘 첫 기록을 남겨볼까요?</div>';
   document.getElementById('sc-wisdom').innerHTML =
     headHtml(s)
     + listHtml
     + '<p class="sub">정답을 찾는 시간이 아니라, <b>마음에 남은 문장에서 생각이 자라는</b> 시간이에요.</p>'
     + '<div class="hint" style="text-align:left;margin:2px 0 6px">오늘 읽은 책 <span style="opacity:.7">(없으면 비워도 괜찮아)</span></div>'
-    + '<div style="display:flex;gap:8px;margin-bottom:6px"><input type="text" id="rtitle" placeholder="책·글 제목" style="flex:1;margin-bottom:0"><input type="number" id="rpages" min="1" max="2000" placeholder="쪽수" style="width:90px;margin-bottom:0;text-align:center"></div>'
+    + '<input type="text" id="rtitle" placeholder="책·글 제목" style="margin-bottom:6px">'
+    + '<div style="display:flex;gap:8px;margin-bottom:6px"><input type="text" id="rauthor" placeholder="지은이 (선택)" style="flex:1;margin-bottom:0"><input type="number" id="rpages" min="1" max="2000" placeholder="쪽수" style="width:90px;margin-bottom:0;text-align:center"></div>'
     + '<div class="hint" style="text-align:left;margin:0 0 10px">읽은 쪽수는 1쪽 = 5m로 달리기 거리가 돼요 🏃</div>'
+    + genreChipsHtml()
     + '<div class="q" style="font-size:16px">📖 오늘 마음에 남은 문장</div>'
     + '<textarea id="recon" rows="3" placeholder="한 줄부터 시작해 봐. 더 쓰고 싶으면 얼마든지 좋아 🌱"></textarea>'
     + '<div class="hint" style="text-align:left;margin:-4px 0 12px;line-height:1.7">막막하면 이렇게 시작해도 좋아요<br>· 제일 기억에 남는 <b>장면</b> 하나<br>· 주인공이 한 <b>말</b> 중에 마음에 남은 것<br>· 오늘 <b>새로 알게 된</b> 것 하나<br><span style="color:var(--teal)">길게 쓰고 싶은 날은 마음껏 써도 좋아 ✨</span></div>'
@@ -707,6 +709,7 @@ function askReconAgain(){
 }
 function saveReading(){
   const title=(document.getElementById('rtitle').value||'').trim();
+  const author=((document.getElementById('rauthor')||{}).value||'').trim().slice(0,60);
   const recon=(document.getElementById('recon').value||'').trim();
   if(!title && !recon){ toast('한 줄이라도 적어주세요'); return; }
   // 마음에 남은 문장이 비면 2단계로 권함 (끝내 원하면 막지 않음)
@@ -721,16 +724,16 @@ function saveReading(){
   } else { _reconNudged=false; _reconConfirmed=false; }
   const pages=Math.max(0,Math.min(2000,parseInt((document.getElementById('rpages')||{}).value,10)||0));
   const ans=((document.getElementById('wanswer')||{}).value||'').trim();
-  DB.addReading({ title:title, recon:recon, pages:pages, question:_lastWQ, answer:ans });
+  DB.addReading({ title:title, author:author, genre:_readGenre, recon:recon, pages:pages, question:_lastWQ, answer:ans });
   logEvent('reading', { hasTitle:title?1:0, hasRecon:recon?1:0, pages:pages, gotQ:_lastWQ?1:0, hasAns:ans?1:0 });
-  _reconNudged=false; _reconConfirmed=false;
+  _reconNudged=false; _reconConfirmed=false; _readGenre='';
   completeStage('wisdom', {});
 }
 async function askWisdom(){
   const t=(document.getElementById('recon').value||'').trim();
   const box=document.getElementById('wq'); box.textContent='질문을 만드는 중…';
   const _p=DB.profile(); const _nm=(_p&&_p.name)?_p.name:''; const _voc=_nm?vocative(_nm):'';
-  let text=await aiTask('reading_question', { name:_nm, sentence:t, dream:DB.currentDream() });
+  let text=await aiTask('reading_question', { name:_nm, sentence:t, dream:DB.currentDream(), genre:(_readGenre?genreLabel(_readGenre):'') });
   if(!aiKoreanOk(text) || !looksComplete(text)) text=null;
   _lastWQ = text || ((_voc?_voc+', ':'')+'좋은 문장을 골랐네요. 그 문장이 '+(_nm?_nm+'의':'') +' 마음에 남은 이유는 뭘까?');
   box.textContent = _lastWQ;
@@ -1096,7 +1099,7 @@ function renderParent(){
   const msgs=DB.parentMessages().slice(-3).reverse();
   const msgHtml = msgs.length ? msgs.map(function(m){ return '<div style="font-size:14px;background:var(--mint-soft);border:1px solid var(--mint);border-radius:10px;padding:12px;margin-bottom:8px">💬 '+esc(m.starter)+'</div>'; }).join('') : '<div class="sub">아직 대화 한마디가 없어요. 아이가 마음을 남기면 여기에 떠요.</div>';
   const gHtml = grecent.length ? grecent.map(function(g){ return '<div class="rlog"><b>'+esc(g.text)+'</b><span>'+g.date+'</span></div>'; }).join('') : '<div class="sub" style="padding:4px 0">아직 감사 기록이 없어요.</div>';
-  const rHtml = rrecent.length ? rrecent.map(function(e){ const tt=e.title||(e.recon?e.recon.slice(0,14)+'…':'제목 없이 남긴 기록'); return '<div class="rlog"><b>'+esc(tt)+'</b><span>'+e.date+(e.pages?' · '+e.pages+'쪽':'')+'</span></div>'; }).join('') : '<div class="sub" style="padding:4px 0">아직 읽기 기록이 없어요.</div>';
+  const rHtml = rrecent.length ? rrecent.map(function(e){ const tt=e.title||(e.recon?e.recon.slice(0,14)+'…':'제목 없이 남긴 기록'); return '<div class="rlog"><b>'+esc(tt)+'</b>'+(e.author?'<span style="color:var(--muted)">'+esc(e.author)+'</span>':'')+'<span>'+e.date+(e.pages?' · '+e.pages+'쪽':'')+'</span></div>'; }).join('') : '<div class="sub" style="padding:4px 0">아직 읽기 기록이 없어요.</div>';
   document.getElementById('sc-parent').innerHTML =
     '<div class="loop-hero"><p>부모 창 · 같은 아이를 함께</p><h1>오늘 '+(DB.profile()?esc(DB.profile().name):'우리 아이')+'</h1>'
     + '<div class="streak">오늘 '+doneCount+'/4'+(idx!=null?' · 상태 '+idx:'')+(wb!=null?' · 마음 '+wb:'')+'</div></div>'
@@ -1420,9 +1423,12 @@ async function openMonthlyReport(){
     + '<p style="margin-top:10px;font-size:11px">기록 기반 참고용이에요. 진단이 아니에요.</p>'
   );
   const prompt='아이 '+nm+'. 최근 30일: 활동 '+s.act+'일, 하루 완성 '+s.full+'번, 감사 '+s.g+'개, 읽기 '+s.r+'권, 평균 상태 '+(s.idxAvg!=null?(s.idxAvg+(s.idxTrend?'('+s.idxTrend+')':'')):'기록 적음')+'. 최근 감사: '+(prof.grats.join(' / ')||'없음')+'. 읽은 것: '+(prof.reads.join(', ')||'없음')+'. 작은 실천: '+(prof.acts.join(', ')||'없음')+'.'+(prof.dream?(' 아이의 꿈: '+prof.dream+' — 소질의 싹과 자연스럽게 이어지면 언급.'):'');
+  const _gs=genreStats();
   let _o2=await aiTask('monthly_report', { name:nm, act:s.act, full:s.full, g:s.g, r:s.r,
     idxAvg:s.idxAvg, idxTrend:s.idxTrend, grats:prof.grats, reads:prof.reads, acts:prof.acts,
-    dream:prof.dream }); if(!aiKoreanOk(_o2)) _o2=null;
+    dream:prof.dream,
+    genres:_gs.rows.map(function(x){ return x.name+' '+x.n+'권'; }),
+    genreKinds:_gs.kinds }); if(!aiKoreanOk(_o2)) _o2=null;
   const out=_o2 || ('한 달 동안 '+s.act+'일을 함께했어요. 꾸준히 쌓인 기록이 아이의 힘이 됩니다. 다음 달에도 짧은 시간이면 충분해요.');
   const el=document.getElementById('mr-ai'); if(el) el.innerHTML='💬 '+esc(out);
 }
@@ -1565,6 +1571,40 @@ function micFill(id,btn){
 }
 /* ---------- 智 마라톤 구간 축하 (1쪽=5m · 완주 42.195km) ---------- */
 function fmtDist(m){ return m<1000? Math.round(m)+'m' : (m/1000).toFixed(m<10000?2:1)+'km'; }
+/* 책 장르 — 타이핑 없이 한 번 누르면 선택 (선택 안 해도 저장됨) */
+const GENRES = [
+  ['story','📖','이야기·소설'], ['science','🔬','과학'], ['history','🏛','역사·인물'],
+  ['art','🎨','예술·만화'],   ['world','🌏','사회·문화'], ['poem','✍️','시·에세이'],
+  ['study','📐','학습·교과'], ['etc','✨','그 밖에']
+];
+var _readGenre = '';
+function genreLabel(key){ const g=GENRES.find(function(x){return x[0]===key;}); return g? (g[1]+' '+g[2]) : ''; }
+function genreChipsHtml(){
+  return '<div class="hint" style="text-align:left;margin:12px 0 4px">어떤 책이야? <span style="opacity:.7">(안 골라도 괜찮아)</span></div>'
+    + '<div class="chips">'
+    + GENRES.map(function(g){ return '<button type="button" class="chip'+(_readGenre===g[0]?' sel':'')+'" data-genre="'+g[0]+'">'+g[1]+' '+g[2]+'</button>'; }).join('')
+    + '</div>';
+}
+/* 장르 칩 선택 (따옴표 안전한 위임 방식) */
+document.addEventListener('click', function(e){
+  const b = e.target && e.target.closest ? e.target.closest('[data-genre]') : null;
+  if(!b) return;
+  const key = b.getAttribute('data-genre');
+  _readGenre = (_readGenre===key) ? '' : key;   // 다시 누르면 해제
+  const all = document.querySelectorAll('[data-genre]');
+  for(let i=0;i<all.length;i++) all[i].classList.toggle('sel', all[i].getAttribute('data-genre')===_readGenre);
+});
+/* 지금까지 읽은 장르 분포 */
+function genreStats(){
+  const log=DB.readingLog(); const cnt={};
+  log.forEach(function(e){ if(e.genre) cnt[e.genre]=(cnt[e.genre]||0)+1; });
+  const rows=GENRES.map(function(g){ return { key:g[0], emoji:g[1], name:g[2], n:cnt[g[0]]||0 }; })
+                   .filter(function(r){ return r.n>0; })
+                   .sort(function(a,b){ return b.n-a.n; });
+  const total=rows.reduce(function(s,r){ return s+r.n; },0);
+  return { rows:rows, total:total, kinds:rows.length };
+}
+
 /* 리딩 마라톤 배지 — 코드로 그리는 SVG (이미지 파일 없이 어떤 화면에서도 선명)
    1km · 5km마다 · 42.195km 완주 */
 const RUN_MARKS = [
@@ -1680,7 +1720,7 @@ function renderMyRoom(){
   const gShow=grats.slice(-G).reverse(); const rShow=reads.slice(-R).reverse();
   const gMore=grats.length-gShow.length; const rMore=reads.length-rShow.length;
   const rHtml = rShow.length
-    ? rShow.map(function(e){ return '<div style="padding:9px 0;border-bottom:1px dashed var(--line)"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:14px">'+esc(e.title||'(제목 없음)')+'</b><span style="font-size:11px;color:var(--muted);white-space:nowrap">'+esc(e.date||'')+(e.pages?' · '+e.pages+'쪽':'')+'</span></div>'+(e.recon?'<div style="font-size:13px;color:var(--muted);margin-top:3px">“'+esc(e.recon)+'”</div>':'')+(e.answer?'<div style="font-size:12px;color:var(--teal);margin-top:3px">💭 '+esc(e.answer)+'</div>':'')+'</div>'; }).join('')
+    ? rShow.map(function(e){ return '<div style="padding:9px 0;border-bottom:1px dashed var(--line)"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:14px">'+esc(e.title||'(제목 없음)')+'</b><span style="font-size:11px;color:var(--muted);white-space:nowrap">'+esc(e.date||'')+(e.pages?' · '+e.pages+'쪽':'')+'</span></div>'+((e.author||e.genre)?'<div style="font-size:12px;color:var(--muted);margin-top:1px">'+(e.author?'지은이 '+esc(e.author):'')+(e.author&&e.genre?' · ':'')+(e.genre?genreLabel(e.genre):'')+'</div>':'')+(e.recon?'<div style="font-size:13px;color:var(--muted);margin-top:3px">“'+esc(e.recon)+'”</div>':'')+(e.answer?'<div style="font-size:12px;color:var(--teal);margin-top:3px">💭 '+esc(e.answer)+'</div>':'')+'</div>'; }).join('')
     : '<div style="font-size:13px;color:var(--muted);padding:8px 0">아직 책이 없어. 오늘 첫 권을 꽂아볼까?</div>';
   const gHtml = gShow.length
     ? gShow.map(function(g){ return '<div style="padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px"><span style="color:var(--muted);font-size:11px">'+esc(g.date||'')+'</span><br>'+esc(g.text)+'</div>'; }).join('')
@@ -1696,6 +1736,26 @@ function renderMyRoom(){
     + '<button class="btn btn-primary" style="width:100%;margin-bottom:14px" onclick="giftFromPast()">🎁 그날의 나에게서 선물 받기</button>'
     + '<button class="btn btn-ghost" style="width:100%;margin-bottom:14px;margin-top:-4px" onclick="openPastToday()">📅 지난날의 오늘 보기</button>'
     + '<div class="card" style="margin-bottom:14px;cursor:pointer;background:var(--mint-soft);border:1px solid var(--mint)" onclick="renderSentences()"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:700">🌱 나의 문장 모음</div><div style="font-size:12px;color:var(--muted)">지금까지 모은 문장 '+reads.filter(function(e){return e.recon&&e.recon.trim();}).length+'개 · 하나도 사라지지 않아요</div></div><div style="color:var(--teal)">→</div></div></div>'
+    + (function(){
+        /* 어떤 책을 좋아하는가 — 장르 분포 */
+        const gs=genreStats();
+        if(!gs.total) return '';
+        const max=gs.rows[0].n;
+        const bars=gs.rows.map(function(r){
+          const w=Math.max(8, Math.round(r.n/max*100));
+          return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+            + '<div style="width:88px;font-size:12px;white-space:nowrap">'+r.emoji+' '+esc(r.name)+'</div>'
+            + '<div style="flex:1;background:var(--line);border-radius:999px;height:9px;overflow:hidden"><div style="width:'+w+'%;height:100%;background:var(--teal);border-radius:999px"></div></div>'
+            + '<div style="width:26px;text-align:right;font-size:12px;color:var(--muted)">'+r.n+'</div></div>';
+        }).join('');
+        const top=gs.rows[0];
+        return '<div class="card" style="margin-bottom:14px">'
+          + '<div style="font-weight:700;margin-bottom:2px">📚 내가 좋아하는 책</div>'
+          + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">'
+          + (gs.kinds>=3 ? ('여러 갈래를 읽고 있어 — '+gs.kinds+'가지 · 가장 많이 읽은 건 '+top.emoji+' '+esc(top.name))
+                         : ('지금은 '+top.emoji+' '+esc(top.name)+'을(를) 가장 많이 읽었어'))+'</div>'
+          + bars + '</div>';
+      })()
     + (function(){
         /* 리딩 마라톤 배지 진열장 — 딴 것은 색으로, 아직인 것은 흐리게 */
         const got=earnedBadges(), nx=nextBadge();
@@ -1799,7 +1859,7 @@ function openPastToday(){
     return '<div style="text-align:left;background:var(--mint-soft);border:1px solid var(--mint);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px"><b>'+ago+'년 전 오늘 ('+e.y+')</b>'
       +(e.idx!=null?'<br>오늘의 상태 '+e.idx:'')
       +(e.grats.length?'<br>🙏 '+e.grats.map(esc).join(' / '):'')
-      +(e.reads.length?'<br>📚 '+e.reads.map(function(r){return esc(r.title||'(제목 없음)');}).join(', '):'')
+      +(e.reads.length?'<br>📚 '+e.reads.map(function(r){return esc(r.title||'(제목 없음)')+(r.author?' ('+esc(r.author)+')':'');}).join(', '):'')
       +'</div>';
   }).join('');
   showOverlay('<div style="font-size:36px;margin-bottom:6px">📅</div><h2>'+(nm?nm+', ':'')+'지난날의 오늘이야</h2>'+html+'<p style="font-size:12px;color:var(--muted)">그날의 너도 오늘처럼 하루를 살았어. 내년 오늘, 지금의 너를 또 만나게 될 거야.</p><button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="this.closest(\'.ovl\').remove()">신기하다!</button>');
