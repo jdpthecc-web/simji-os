@@ -383,6 +383,13 @@ function computeStateIndex(b){
 }
 
 /* ---------- AIClient (서버 /ai 프록시; 실패 시 안전 템플릿 폴백) ---------- */
+/* 인공지능기본법 제31조 — 생성형 AI 결과물 표시.
+   AI가 실제로 만든 문장에만 붙이고, 연결 실패로 기본 문구가 나온 경우에는 붙이지 않습니다. */
+var _aiUsed = false;
+function aiTag(used){
+  return used ? '<div style="font-size:11px;color:var(--muted);margin-top:6px">🤖 AI가 생성한 문장이에요</div>' : '';
+}
+
 /* AI 호출 — 지시문(프롬프트)은 서버가 보관합니다.
    앱은 '무슨 작업인지'와 필요한 값만 보냅니다. */
 async function aiTask(task, vars){
@@ -548,10 +555,12 @@ async function submitBrain(){
 
   const sources=['자기보고']; if(_brainInput.taskScore!=null) sources.push('반응속도');
   const _pn=DB.profile(); const _nm=_pn?_pn.name:'';
+  _aiUsed=false;
   let text = await aiTask('brain_coach', { idx:idx, sources:sources.join('+'), focus:_brainInput.focus,
     energy:_brainInput.energy, taskScore:_brainInput.taskScore, trend:trend, returned:!!returned,
     name:_nm, dream:DB.currentDream() });
   if(!aiKoreanOk(text) || !looksComplete(text)) text=null;
+  _aiUsed = !!text;
 
   // 폴백(AI 불가 시 안전 템플릿)
   if(!text){
@@ -567,6 +576,7 @@ async function submitBrain(){
     + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">신호 '+sources.join('+')+' · 추세 '+trend+'</div>'
     + '<div class="interp">'+esc(interp)+'</div>'
     + (step?'<div class="step">오늘의 한 걸음 · '+esc(step)+'</div>':'')
+    + aiTag(_aiUsed)
     + '</div>'
     + '<button class="btn btn-primary" style="margin-top:14px" onclick="completeStage(\'brain\',{stateIndex:'+idx+'})">다음: 마음 나누기 →</button>';
   btn.style.display='none';
@@ -637,6 +647,7 @@ async function submitHeart(){
     btn.style.display='none'; return;
   }
   // 연결 에이전트 — 아이 받아줌 + 부모 대화 한마디
+  _aiUsed=false;
   let text=await aiTask('heart_connect', { grat:grat, feel:feel, wb:wb });
   let childLine='',parentLine='';
   if(text){ const parts=text.split('|||'); childLine=(parts[0]||'').trim(); parentLine=(parts[1]||'').trim(); }
@@ -648,7 +659,7 @@ async function submitHeart(){
   DB.addParentMessage({starter:parentLine,grat:grat,wb:wb});
   logEvent('gratitude',{wb:wb,count:grats.length,mood:_heart.mood,calm:_heart.calm,conn:_heart.connect,hasFeel:feel?1:0});
   notifyRecord(feel || grat || '');
-  box.innerHTML='<div class="coach"><div class="label">마음 연결</div><div class="interp">'+esc(childLine)+'</div><div class="step">💌 부모님 화면에는 오늘의 대화 한마디를 살짝 보내뒀어</div></div><button class="btn btn-primary" style="margin-top:14px" onclick="completeStage(\'heart\',{heartIndex:'+wb+'})">다음: 읽기·질문 →</button>';
+  box.innerHTML='<div class="coach"><div class="label">마음 연결</div><div class="interp">'+esc(childLine)+'</div><div class="step">💌 부모님 화면에는 오늘의 대화 한마디를 살짝 보내뒀어</div>'+aiTag(_aiUsed)+'</div><button class="btn btn-primary" style="margin-top:14px" onclick="completeStage(\'heart\',{heartIndex:'+wb+'})">다음: 읽기·질문 →</button>';
   btn.style.display='none';
 }
 let _lastWQ='';
@@ -662,9 +673,12 @@ function renderWisdom(){
   const listHtml = total
     ? recent.map(function(e){ const tt=e.title||(e.recon?e.recon.slice(0,14)+'…':'제목 없이 남긴 기록'); return '<div class="rlog"><b>'+esc(tt)+'</b>'+(e.author?'<span style="color:var(--muted)">'+esc(e.author)+'</span>':'')+'<span>'+e.date+(e.pages?' · '+e.pages+'쪽':'')+'</span></div>'; }).join('')
     : '<div class="sub" style="text-align:center;padding:4px 0 10px">아직 기록이 없어요. 오늘 첫 기록을 남겨볼까요?</div>';
+  const listMore = total>3
+    ? '<div style="text-align:right;padding:2px 2px 0"><button type="button" class="chip" style="font-size:12px;padding:5px 12px" onclick="renderMyRoom()">지금까지 '+total+'권 · 전체 보기 →</button></div>'
+    : '';
   document.getElementById('sc-wisdom').innerHTML =
     headHtml(s)
-    + listHtml
+    + listHtml + listMore
     + '<p class="sub">정답을 찾는 시간이 아니라, <b>마음에 남은 문장에서 생각이 자라는</b> 시간이에요.</p>'
     + '<div class="hint" style="text-align:left;margin:2px 0 6px">오늘 읽은 책 <span style="opacity:.7">(없으면 비워도 괜찮아)</span></div>'
     + '<input type="text" id="rtitle" placeholder="책·글 제목" style="margin-bottom:6px">'
@@ -736,7 +750,7 @@ async function askWisdom(){
   let text=await aiTask('reading_question', { name:_nm, sentence:t, dream:DB.currentDream(), genre:(_readGenre?genreLabel(_readGenre):'') });
   if(!aiKoreanOk(text) || !looksComplete(text)) text=null;
   _lastWQ = text || ((_voc?_voc+', ':'')+'좋은 문장을 골랐네요. 그 문장이 '+(_nm?_nm+'의':'') +' 마음에 남은 이유는 뭘까?');
-  box.textContent = _lastWQ;
+  box.innerHTML = esc(_lastWQ) + aiTag(!!text);
   const w=document.getElementById('wa-wrap'); if(w){ w.style.display='block'; }
 }
 function renderAction(){
@@ -876,13 +890,14 @@ async function suggestAct(btn){
       recent: recentActs(3), avoid: _actShown.slice(-6), theme: theme
     });
   }catch(e){ out=null; }
+  var _aiFromModel = !!out;
   // AI가 실패했거나 방금 준 것과 같으면 후보 목록에서 새로 고른다
   if(!out || _actShown.indexOf(out)>=0) out = pickFromPool();
   const text = out;
   _actShown.push(text); if(_actShown.length>12) _actShown.shift();
   const inp=document.getElementById('act'); if(inp) inp.value=text;
   const all=document.querySelectorAll('[data-act]'); for(let i=0;i<all.length;i++) all[i].classList.remove('sel');
-  if(tip&&tt){ tt.textContent=text; tip.style.display='block'; }
+  if(tip&&tt){ tt.innerHTML=esc(text)+aiTag(!!out && out===text && _aiFromModel); tip.style.display='block'; }
   if(btn){ btn.disabled=false; btn.textContent='✨ 다시 추천받기'; }
 }
 /* ===== 動 · 실천 활동 4종 (타이머·카운터·저장 + 음성) ===== */
@@ -1709,6 +1724,13 @@ function checkRunMoments(){
 }
 
 /* ---------- 나의 방: 평생 기록의 비밀의 방 ---------- */
+/* 나의 방 목록 표시 개수 — 처음엔 20개, 더 보기로 늘린다 */
+var _roomShowR = 20, _roomShowG = 20;
+function moreRoom(kind){
+  if(kind==='r') _roomShowR += 20; else _roomShowG += 20;
+  renderMyRoom();
+  setTimeout(function(){ try{ window.scrollTo({top:document.body.scrollHeight*0.6, behavior:'smooth'}); }catch(e){} }, 60);
+}
 function renderMyRoom(){
   const d=DB.load();
   const p=DB.profile(); const nm=p?p.name:'나';
@@ -1716,7 +1738,7 @@ function renderMyRoom(){
   const grats=(d.gratitudes||[]); const reads=(d.reading||[]);
   const pg=reads.reduce(function(x,e){return x+(e.pages||0);},0);
   const mtr=pg*5; const laps=Math.floor(mtr/42195);
-  const G=500, R=500; // 표시 상한 (넉넉히 — 문장 모음은 전체 표시)
+  const G=_roomShowG, R=_roomShowR;   // 처음 20개, '더 보기'로 20개씩 추가
   const gShow=grats.slice(-G).reverse(); const rShow=reads.slice(-R).reverse();
   const gMore=grats.length-gShow.length; const rMore=reads.length-rShow.length;
   const rHtml = rShow.length
@@ -1774,8 +1796,8 @@ function renderMyRoom(){
           + '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;justify-items:center">'+cells+'</div>'
           + '</div>';
       })()
-    + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:4px">📚 나의 도서관 · '+reads.length+'권·편'+(laps?' · 완주 🏅×'+laps:'')+'</div>'+rHtml+(rMore>0?'<div style="font-size:11px;color:var(--muted);padding-top:8px">…그 이전 기록 '+rMore+'권은 소중히 보관 중</div>':'')+'</div>'
-    + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:4px">🙏 감사 보물상자 · '+grats.length+'개</div>'+gHtml+(gMore>0?'<div style="font-size:11px;color:var(--muted);padding-top:8px">…그 이전 보물 '+gMore+'개는 소중히 보관 중</div>':'')+'</div>'
+    + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:4px">📚 나의 도서관 · '+reads.length+'권·편'+(laps?' · 완주 🏅×'+laps:'')+'</div>'+rHtml+(rMore>0?'<button type="button" class="chip" style="width:100%;margin-top:10px;font-size:12px" onclick="moreRoom(\'r\')">더 보기 (남은 '+rMore+'권)</button>':'')+'</div>'
+    + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:4px">🙏 감사 보물상자 · '+grats.length+'개</div>'+gHtml+(gMore>0?'<button type="button" class="chip" style="width:100%;margin-top:10px;font-size:12px" onclick="moreRoom(\'g\')">더 보기 (남은 '+gMore+'개)</button>':'')+'</div>'
     + (marks.length?'<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:8px">🏅 나의 발자취</div><div style="display:flex;flex-wrap:wrap;gap:8px">'+marks.map(function(m){return '<span style="background:var(--mint-soft);border:1px solid var(--mint);border-radius:999px;padding:6px 12px;font-size:12px;white-space:nowrap">'+m+'</span>';}).join('')+'</div></div>':'')
     + '<div class="nonmed">이 방의 기록은 평가받지 않아. 전부 너의 것이고, 너의 자람이야.</div>'
     + backHtml();
