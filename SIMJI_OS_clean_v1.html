@@ -757,8 +757,8 @@ function renderAction(){
   const s=STAGES[3];
   const returned = DB.returnedAfterBreak();
   const presets = (tone()==='teen'
-      ? ['목·어깨 스트레칭 1분','창밖 멀리 30초 바라보기','제자리 스쿼트 10번','오늘 잘한 일 하나 인정하기']
-      : ['기지개 쭉— 켜고 어깨 돌리기','제자리 뛰기 10번','가족 한 번 꼭 안아주기','창밖 멀리 30초 바라보기','오늘 잘한 일 찾아 나 칭찬하기']);
+      ? ['목·어깨 스트레칭 1분','창밖 멀리 30초 바라보기','제자리 스쿼트 10번','집안일 한 가지 돕기','오늘 잘한 일 하나 인정하기']
+      : ['기지개 쭉— 켜고 어깨 돌리기','제자리 뛰기 10번','집안일 한 가지 돕기','가족 한 번 꼭 안아주기','창밖 멀리 30초 바라보기','오늘 잘한 일 찾아 나 칭찬하기']);
   const mine = recentActs(3);
   const streak = actStreak();
   document.getElementById('sc-action').innerHTML =
@@ -802,6 +802,7 @@ const ACT_FN = {
   '오늘 잘한 일 하나 인정하기':'doPraise',
   '기지개 쭉— 켜고 어깨 돌리기':'doStretch',
   '제자리 뛰기 10번':'doJump',
+  '집안일 한 가지 돕기':'doChore',
   '가족 한 번 꼭 안아주기':'doHug',
   '오늘 잘한 일 찾아 나 칭찬하기':'doPraise'
 };
@@ -851,6 +852,7 @@ const ACT_POOL = {
     '오늘 웃었던 순간 하나 떠올리기','거울 보고 나에게 한 번 웃어주기','나에게 잘했다고 말해주기',
     '가족에게 고맙다고 말하기','가족 한 명 꼭 안아주기','동생이나 형에게 칭찬 한마디',
     '책상 위 물건 세 개만 제자리에 두기','신발 나란히 놓기','내일 입을 옷 미리 꺼내두기',
+    '식탁에 수저 놓기','화분에 물 주기','마른 그릇 닦아 넣기',
     '가방 속 1분만 정리하기','쓰레기 하나 주워 버리기',
     '책 딱 한 쪽만 읽기','오늘 새로 알게 된 것 하나 말해보기'
   ],
@@ -862,6 +864,7 @@ const ACT_POOL = {
     '오늘 잘한 일 하나 적기','지금 기분을 한 단어로 말해보기','나에게 수고했다고 말해주기',
     '가족에게 메시지 한 줄 보내기','고마운 사람 한 명 떠올리기','친구에게 안부 한마디 보내기',
     '책상 위 세 개만 치우기','휴대폰 오분간 엎어두기','알림 하나 꺼두기','가방 일분만 정리하기',
+    '분리수거 내놓기','빨래 개서 넣기','식탁 닦고 정리하기',
     '내일 할 일 딱 하나만 적기','책 한 쪽 읽기','오늘 배운 것 한 줄로 요약하기'
   ]
 };
@@ -1028,6 +1031,50 @@ function countActivity(title, label, guide, kind, msPerRep){
   };
 }
 
+/* ③-3 집안일 한 가지 — 가족 안에서 내 몫 만들기
+   근거: 어릴 때부터 집안일에 참여한 아이가 성인기 관계·자립·성취에서 더 나은 결과를 보였다는
+   종단연구 보고(Rossmann, 2002, Univ. of Minnesota). 양이나 난이도가 아니라 '매일 할 수 있는
+   쉬운 일을 꾸준히'가 핵심이므로, 1분 안에 끝나는 일들로만 구성했습니다. */
+const CHORES = {
+  elem: ['현관 신발 정리하기','식탁에 수저 놓기','마른 그릇 닦아 넣기','화분에 물 주기',
+         '쓰레기봉투 내다 놓기','반려동물 밥 주기','저녁에 커튼 치기','내 책상 1분 정리'],
+  teen: ['설거지 한 번 맡기','분리수거 내놓기','빨래 개서 넣기','내 방 바닥 정리',
+         '식탁 닦고 정리하기','현관·신발장 정리','장 본 것 정리 돕기','화분에 물 주기']
+};
+var _choreToday = '';
+function pickChore(){
+  const list = CHORES[tone()==='teen'?'teen':'elem'];
+  const done = recentActs(6);
+  const cand = list.filter(function(x){ return done.indexOf(x)<0 && x!==_choreToday; });
+  const pool = cand.length? cand : list;
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+function doChore(){
+  _choreToday = pickChore();
+  const o=showOverlay(
+    '<div style="font-size:38px">🏠</div>'
+    +'<h2>오늘의 집안일 한 가지</h2>'
+    +'<div class="coach" style="margin-top:10px"><div class="interp" id="ch-t" style="font-size:17px;font-weight:700">'+esc(_choreToday)+'</div></div>'
+    +'<p id="ch-s" style="font-size:13px;color:var(--muted);line-height:1.7;margin-top:8px">작은 일이지만, 우리 집이 굴러가는 데 네 몫이 들어가는 거야.</p>'
+    +voiceBtnHtml()
+    +'<button class="btn btn-primary" style="width:100%;margin-top:12px" id="ch-go">다 했어요 ✓</button>'
+    +'<button type="button" class="chip" style="width:100%;margin-top:8px" id="ch-new">다른 일로 바꿔줘</button>'
+    +'<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="closeOvl(this)">나중에 할게요</button>');
+  const tEl=o.querySelector('#ch-t'), sub=o.querySelector('#ch-s');
+  const go=o.querySelector('#ch-go'), nw=o.querySelector('#ch-new');
+  speak('오늘의 집안일은 '+_choreToday);
+  nw.onclick=function(){ _choreToday=pickChore(); tEl.textContent=_choreToday; speak(_choreToday); };
+  go.onclick=function(){
+    o.querySelector('h2').textContent='고마워 💚';
+    sub.textContent='오늘 우리 집이 조금 더 편해졌어. 가족에게도 한번 말해줘.';
+    go.style.display='none'; nw.style.display='none';
+    speak('참 잘했어요. 가족에게도 말해줘');
+    fillAct('집안일: '+_choreToday);
+    logEvent('run_mark',{kind:'chore'});
+    setTimeout(function(){ closeOvl(sub); },2200);
+  };
+}
+
 /* ③-2 가족 한 번 꼭 안아주기 */
 function doHug(){
   const o=showOverlay(
@@ -1120,7 +1167,17 @@ function renderParent(){
     + '<div class="streak">오늘 '+doneCount+'/4'+(idx!=null?' · 상태 '+idx:'')+(wb!=null?' · 마음 '+wb:'')+'</div></div>'
     + gapAskHtml()
     + '<div class="card" style="margin-bottom:14px;background:var(--mint-soft);border:1px solid var(--mint)"><div style="font-weight:700;margin-bottom:6px">📌 부모님께 드리는 한 가지 부탁</div><div style="font-size:13px;line-height:1.75;color:var(--ink)">기록했는지 <b>확인하지 마시고</b>, 무엇을 읽었는지 <b>물어봐 주세요.</b><br>검사받는 느낌이 들면 아이는 멈춥니다. 이 앱의 기록은 숙제가 아니라 아이의 것이에요.<br><span style="color:var(--muted)">좋은 습관은 하루아침에 만들어지지 않습니다. 한 줄부터 천천히 함께해 주세요.</span></div></div>'
-    + '<div class="card" style="margin-bottom:14px"><div style="font-size:13px;color:var(--muted);margin-bottom:8px">오늘의 대화 한마디 (자기 전 1분)</div>'+msgHtml+'</div>'
+    + '<div class="card" style="margin-bottom:14px"><div style="font-size:13px;color:var(--muted);margin-bottom:8px">오늘의 대화 한마디 (자기 전 1분)</div>'+msgHtml
+    + (function(){
+        const act = (done.action && done.action.act) ? String(done.action.act) : '';
+        if(!act) return '';
+        const isChore = act.indexOf('집안일')===0;
+        return '<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:13px">'
+          + '<b style="color:var(--teal)">오늘 아이가 한 걸음</b> · '+esc(act.replace(/^집안일: /,''))
+          + (isChore?'<div style="font-size:12px;color:var(--muted);margin-top:4px">🏠 오늘 집안일에 함께했어요. 시켜서가 아니라 스스로 맡은 몫으로 인정해 주시면 더 오래 갑니다.</div>':'')
+          + '</div>';
+      })()
+    + '</div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:8px">🙏 감사 보물상자 · '+gall.length+'개</div>'+gHtml+'</div>'
     + '<div class="card" style="margin-bottom:14px"><div style="font-weight:700;margin-bottom:8px">📚 리딩 마라톤 · '+rlog.length+'권·편</div>'
     + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;white-space:nowrap">🏃 누적 '+rlog.reduce(function(x,e){return x+(e.pages||0);},0)+'쪽 = '+fmtDist(DB.readingMeters())+' · 완주 '+Math.floor(DB.readingMeters()/42195)+'회'+(Math.floor(DB.readingMeters()/42195)?' 🏅':'')+'</div>'+rHtml+'</div>'
